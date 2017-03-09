@@ -1,0 +1,44 @@
+CHANGES
+=======
+
+* Fix syntax
+* Remove reference to tenant prefix
+* Initial start to use multiple tenants
+* Initial changes for ACI remodel to use address scopes
+* Improvements to prevent hanging allocations in case segment is missing
+* Log and fail when no allocation can be made
+* Fix external subnet handling
+* Omit check until fixed
+* Fix subnet handling
+* Remove rogue line
+* Initial agent implementation, no polling yet
+* Initial update for single VLAN segmented networks
+* Change ini to sample
+* Get host_config
+* Set L2 unknown unicast to flood
+* Add some debug for API
+* Only delete segment allocation in case no ports on any host in segment
+* Fix tenant auto create
+* Add node path
+* Add a Todo
+* Switch to boolean
+* This time in the right place
+* Set ARP Flood on BD
+* Remove expand hash in HEADS
+* Now try to properly fix them
+* Fix migrations
+* more host config refactoring
+* Remove host config
+* Try to make config namespace clashes less likely
+* Bump commit
+* Use correct context
+* Switch to use subnetpool for now - its a hack and we need to decide how we manage this configuration at runtime
+* Small update to read and gitignore
+* Add gitignore
+* Update comments
+* There needs to be an encapsulation so just use 1 - its being deleted anyway
+* Delete ACI bindings and physical domain assignment on EPG when last port is deleted
+* Use physical network for segment bindings
+* Configure phys domain per host and add a default private net for internal domains
+* Support for hostgroups
+* initial commit

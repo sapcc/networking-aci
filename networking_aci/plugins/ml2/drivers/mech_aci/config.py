@@ -1,0 +1,117 @@
+# Copyright 2016 SAP SE
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+from oslo_config import cfg
+
+DEFAULT_ROOT_HELPER = ('sudo /usr/local/bin/neutron-rootwrap '
+                       '/etc/neutron/rootwrap.conf')
+
+
+aci_opts = [
+    cfg.ListOpt('apic_hosts',
+                default=[],
+                help=_("An ordered list of host names or IP addresses of "
+                       "the APIC controller(s).")),
+    cfg.StrOpt('apic_username',
+               help=_("Username for the APIC controller")),
+    cfg.StrOpt('apic_password',
+               help=_("Password for the APIC controller"), secret=True),
+    cfg.StrOpt('apic_name_mapping',
+               default='use_name',
+               help=_("Name mapping strategy to use: use_uuid | use_name")),
+    cfg.BoolOpt('apic_use_ssl', default=True,
+                help=_("Use SSL to connect to the APIC controller")),
+    cfg.StrOpt('tenant_prefix',
+               default='monsoon_lab',
+               help=_("Name for the tenant on APIC")),
+    cfg.IntOpt('tenant_ring_size',
+               default=60,
+               help=_("Size of tenant pool")),
+
+    cfg.StrOpt('tenant_items_managed',
+               default="1:60",
+               help=_("The individual ring items managed by an agent")),
+
+    cfg.StrOpt('tenant_manager',
+               default='hash_ring',
+               help=_("Name of tenant manager")),
+
+
+    cfg.StrOpt('apic_application_profile',
+               default='monsoon_lab_infrastructure',
+               help=_("Name for the application profile on APIC")),
+    cfg.StrOpt('tenant_default_vrf',
+               default='lab-l2',
+               help=_("Name for the default vrf for tenant networks"))
+
+]
+
+
+
+cfg.CONF.register_opts(aci_opts, "ml2_aci")
+CONF = cfg.CONF
+CONF()
+
+
+def _get_specific_config(prefix):
+    """retrieve config in the format [<label>:<key>]."""
+    conf_dict = {}
+    multi_parser = cfg.MultiConfigParser()
+    multi_parser.read(cfg.CONF.config_file)
+    for parsed_file in multi_parser.parsed:
+        for parsed_item in parsed_file.keys():
+            if parsed_item.startswith(prefix):
+                label, key = parsed_item.split(':')
+                if label.lower() == prefix:
+                    conf_dict[key] = parsed_file[parsed_item].items()
+    return conf_dict
+
+
+def create_addressscope_dictionary():
+    scope_dict = {}
+    conf = _get_specific_config('address-scope')
+    for scope_id in conf:
+        scope_dict[scope_id] = {}
+        for key, value in conf[scope_id]:
+            scope_dict[scope_id][key] = value[0]
+    return scope_dict
+
+
+def create_host_dictionary():
+    host_dict = {}
+    conf = _get_specific_config('aci-host')
+    for host in conf:
+        host_dict[host] = {}
+        for key, value in conf[host]:
+            if key == 'bindings':
+                host_dict[host][key] = value[0].split(",")
+            else:
+                host_dict[host][key] = value[0]
+
+    return host_dict
+
+
+def create_hostgroup_dictionary():
+    host_dict = {}
+    conf = _get_specific_config('aci-hostgroup')
+    for host in conf:
+        host_dict[host] = {}
+        for key, value in conf[host]:
+            if key == 'bindings' or key == 'hosts':
+                host_dict[host][key] = value[0].split(",")
+            else:
+                host_dict[host][key] = value[0]
+
+    return host_dict

@@ -1,0 +1,50 @@
+[ml2_cisco_apic]
+
+# Hostname:port list of APIC controllers
+apic_hosts = 10.0.0.10:443
+
+apic_username = admin2
+
+# Password for the APIC controller
+apic_password = *******
+
+# Whether use SSl for connecting to the APIC controller or not
+apic_use_ssl = True
+
+apic_system_id = openstack
+
+apic_tenant_name = _openstack_monsoon_lab
+
+tenant_private_network = lab-l2
+
+
+[hostgroup:bb99]
+hosts = mo-c1dae40cb
+
+#bindings  = port/200/1/4,port/201/1/4,vpc/301-302/vPC-bb99-fia_PolGrp,vpc/301-302/vPC-bb99-fib_PolGrp,dpc/301/1-ports-30-21_PolGrp
+bindings  = vpc/301-302/vPC-bb99-fia_PolGrp,vpc/301-302/vPC-bb99-fib_PolGrp
+segment_type  = vlan
+segment_range = 3916:3930
+physical_network = bb99-fi
+
+
+
+
+# Set up host specific configuration needs to be one for each host that physically connects
+# VMs or devices to the ACI fabric i.e. each hypervisor or L3 node. Hosts in a host group don't
+# need a unique host configuration
+
+[host:mo-c1dae40cb]
+
+#bindings  = port/200/1/4,port/201/1/4,vpc/301-302/vPC-bb99-fia_PolGrp,vpc/301-302/vPC-bb99-fib_PolGrp,dpc/301/1-ports-30-21_PolGrp
+bindings  = vpc/301-302/vPC-bb99-fia_PolGrp,vpc/301-302/vPC-bb99-fib_PolGrp
+segment_type  = vlan
+segment_range = 3916:3930
+physical_network = bb99-fi
+
+[subnetpool:538c014d-07d3-4d2a-bc45-eea13d38489c]
+l3_out=lab-n7k-l3
+# scope of subnets created for this pool(public or shared)
+scope = public
+private_network = lab-zone2
+epg_contract = default
