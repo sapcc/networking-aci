@@ -1,3 +1,0 @@
-!# /bin/bash
-
-rsync -arv  --exclude=\.git --exclude=\.idea --exclude=\.DS* /Users/i009713/Developer/openstack/networking-aci /Volumes/kub_04/
