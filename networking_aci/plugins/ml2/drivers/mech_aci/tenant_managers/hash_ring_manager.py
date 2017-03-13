@@ -43,7 +43,7 @@ class HashRingTenantManager(object):
     def all_tenant_names(self):
         tenants = []
 
-        for i in range(1, self.ring_size):
+        for i in range(0, self.ring_size):
             tenants.append(self._tenant_name(i))
 
         return tenants

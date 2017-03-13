@@ -12,17 +12,25 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import time
 import oslo_messaging
+from oslo_log import log as logging
+from oslo_log import helpers as log_helpers
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
-
+from neutron import context
+from neutron.plugins.ml2 import db as ml2_db
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
+from networking_aci.plugins.ml2.drivers.mech_aci import common
 
+
+LOG = logging.getLogger(__name__)
 
 class ACIRpcAPI(object):
     def bind_port(self, rpc_context, port, host_config, segment, next_segment):
         self.bind_port_postcommit(port, host_config, segment, next_segment)
 
+    @log_helpers.log_method_call
     def delete_port(self, rpc_context, port, host_config, clear_phys_dom):
         self.delete_port_postcommit(port, host_config, clear_phys_dom)
 
@@ -35,8 +43,104 @@ class ACIRpcAPI(object):
     def create_subnet(self, rpc_context, subnet, external, address_scope_name):
         self.create_subnet_postcommit(subnet, external, address_scope_name)
 
-    def delete_subnet(self, rpc_context, subnet, external, address_scope_name):
-        self.delete_subnet_postcommit(subnet, external, address_scope_name)
+    def delete_subnet(self, rpc_context, subnet, external, address_scope_name,last_on_network):
+        self.delete_subnet_postcommit(subnet, external, address_scope_name,last_on_network)
+
+
+class AgentRpcCallback(object):
+
+    def __init__(self):
+        self.db = common.DBPlugin()
+        self.context = context.get_admin_context()
+
+    @log_helpers.log_method_call
+    def get_network(self, rpc_context, network_id):
+        network = self.db.get_network(self.context, network_id)
+        return self._get_network(network)
+
+
+    @log_helpers.log_method_call
+    def get_networks(self, rpc_context, limit=None, marker=None):
+        LOG.debug("limit %s marker %s",limit,marker)
+        result=[]
+        networks = self.db.get_networks(self.context, sorts=[('id','desc')], limit=limit, marker=marker)
+
+        for network in networks:
+            result.append(self._get_network(network))
+
+        LOG.debug("networks len %s",len(result))
+
+        return result
+
+
+    @log_helpers.log_method_call
+    def get_network_ids(self, rpc_context):
+        networks =  self.db.get_networks(self.context,fields=['id'])
+
+        result = []
+        for network in networks:
+            result.append(network.get('id'))
+
+        return result
+
+
+    @log_helpers.log_method_call
+    def get_networks_count(self, rpc_context):
+        return self.db.get_networks_count(self.context)
+
+    def _get_network(self, network):
+        start = time.time()
+        network_id = network.get('id')
+        host_group_config = common.get_network_config()['hostgroup_dict']
+        segments = common.get_segments(self.context, network_id)
+
+        segment_dict = {}
+
+        for segment in segments:
+            segment_dict[segment.get('id')] = {'id':segment.get('id'),'segmentation_id':segment.get('segmentation_id'),'phsyical_network':segment.get('physical_network'), 'network_type':segment.get('network_type')}
+
+        result = {'id': network_id, 'name': network.get('name'), 'router:external': network.get('router:external'),'subnets':[],'bindings':[]}
+
+        subnets = self.db.get_subnets_by_network(self.context,network.get('id'))
+
+        for subnet in subnets:
+            pool_id = subnet.get('subnetpool_id')
+            address_scope_name = None
+
+            if pool_id:
+                address_scope_name = common.get_address_scope_name(self.context, pool_id)
+            result['subnets'].append({'id':subnet.get('id'), 'network_id':network_id, 'cidr':subnet.get('cidr'), 'address_scope_name': address_scope_name, 'gateway_ip': subnet.get('gateway_ip')})
+
+
+        ports = self.db.get_ports(self.context, {'network_id':[network_id]})
+
+        processed_hosts =[]
+
+        for port in ports:
+            # for some reason the port binding mixin is not populating the host.
+            # its ineffecient but we use the ml2 db to get for each port.
+            binding_host = ml2_db.get_port_binding_host(self.context.session, port['id'])
+            if binding_host not in processed_hosts:
+                binding_levels = ml2_db.get_binding_levels(self.context.session, port['id'],binding_host)
+
+                host_id, host_config = common.get_host_or_host_group(binding_host,host_group_config)
+
+
+
+                if binding_levels:
+                    #for now we use binding level one
+                    for binding in binding_levels:
+
+                        if binding.level==1 :
+                            # Store one binding for each binding host
+                            segment = segment_dict.get(binding.segment_id)
+                            if segment:
+                                result['bindings'].append({'binding:host_id':binding_host,'host_config':host_config,'encap':segment.get('segmentation_id'),'network_type':segment.get('network_type'),'phsyical_network':segment.get('physical_network')})
+
+            processed_hosts.append(binding_host)
+
+        LOG.info("get network %s :  %s seconds", network_id, (time.time() - start))
+        return result
 
 
 class ACIRpcClientAPI(object):
@@ -72,4 +176,31 @@ class ACIRpcClientAPI(object):
 
     def delete_subnet(self, subnet, external=False, address_scope_name=None):
         self._fanout().cast(self.rpc_context, 'delete_subnet', subnet=subnet, external=external,
-                            address_scope_name=address_scope_name)
+                            address_scope_name=address_scope_name,last_on_network=last_on_network)
+
+class AgentRpcClientAPI(object):
+    version = '1.0'
+
+
+    def __init__(self, rpc_context):
+        target = oslo_messaging.Target(topic=aci_constants.ACI_TOPIC, version='1.0')
+        self.client = n_rpc.get_client(target)
+        self.rpc_context = rpc_context
+
+
+    def _fanout(self):
+        return self.client.prepare(version=self.version, topic=aci_constants.ACI_TOPIC, fanout=False)
+
+
+    def get_network(self, network_id):
+        return self._fanout().call(self.rpc_context, 'get_network', network_id=network_id)
+
+    def get_networks_count(self):
+        return self._fanout().call(self.rpc_context, 'get_networks_count')
+
+
+    def get_networks(self,limit=None , marker=None):
+        return self._fanout().call(self.rpc_context, 'get_networks',limit=limit , marker=marker)
+
+    def get_network_ids(self):
+        return self._fanout().call(self.rpc_context, 'get_network_ids',)

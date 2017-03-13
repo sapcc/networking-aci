@@ -1,4 +1,20 @@
+# Copyright 2016 SAP SE
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 import ast
+import netaddr
 from oslo_log import log
 
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_client
@@ -6,22 +22,9 @@ from networking_aci.plugins.ml2.drivers.mech_aci import cobra_client
 from cobra.model import fv
 from cobra.model import phys
 from cobra import modelimpl
-from cobra.mit import request
 
-
-# from cobra.model.fv import BD
-# from cobra.model.fv import Subnet
-# from cobra.model.fv import Ap
-# from cobra.model.fv import AEPg
-# from cobra.model.fv import RsBd
-# from cobra.model.phys import DomP
-# from cobra.model.fv import RsDomAtt
-# from cobra.model.fv import RsBDSubnetToOut
-# from cobra.model.fv import RsBDSubnetToProfile
-# from cobra.model.fv import RsBDToProfile
-# from cobra.model.fv import RsBDToOut
-# from cobra.model.fv import RsCtx
-# from cobra.model.fv import RsConsIf
+from neutron import context
+from neutron.services.tag import tag_plugin
 
 LOG = log.getLogger(__name__)
 
@@ -51,9 +54,35 @@ class CobraManager(object):
                 self.aci_config.apic_use_ssl,
         )
 
+
+
+        self.context = context.get_admin_context()
+        self.tag_plugin = tag_plugin.TagPlugin()
         self.tenant_manager = tenant_manager
 
+    @property
+    def api(self):
+        return self.apic
 
+    def get_pdn(self,binding):
+        binding_config = binding.split("/")
+        pdn = None
+        if binding_config[0] == 'port':
+            pdn = PORT_DN_PATH % (binding_config[1], binding_config[2], binding_config[3])
+        elif binding_config[0] == 'node':
+            pdn = NODE_DN_PATH % (binding_config[1], binding_config[1], binding_config[2], binding_config[3])
+        elif binding_config[0] == 'dpc':
+            pdn = DPCPORT_DN_PATH % (binding_config[1], binding_config[2])
+        elif binding_config[0] == 'vpc':
+            pdn = VPCPORT_DN_PATH % (binding_config[1], binding_config[2])
+
+        return pdn
+
+    def get_static_binding_encap(self, segment_type, encap):
+        if segment_type == 'vlan':
+            encap = ENCAP_VLAN % str(encap)
+
+        return encap
 
     def ensure_domain_and_epg(self, network_id):
         tenant = self.get_or_create_tenant(network_id)
@@ -72,6 +101,8 @@ class CobraManager(object):
         self.apic.commit(bd)
 
         self.apic.commit([app, epg, rsbd])
+
+        self.tag_plugin.update_tag(self.context, 'networks', network_id,"monsoon3::aci::tenant::{}".format(self.tenant_manager.get_tenant_name(network_id)))
 
         return network_id
 
@@ -92,24 +123,14 @@ class CobraManager(object):
             tenant.delete()
             self.apic.commit(tenant)
 
-
-    def get_static_binding_encap(self, segment_type, encap):
-        if segment_type == 'vlan':
-            encap = ENCAP_VLAN % str(encap)
-
-        return encap
-
     def ensure_static_bindings_configured(self, network_id, host_config, encap=None, delete=False, clear_phys_dom=False):
         tenant = self.get_tenant(network_id)
 
         if tenant:
 
-            LOG.info("Using host config for bindings  {}".format(host_config))
 
             bindings = host_config['bindings']
             segment_type = host_config['segment_type']
-
-            LOG.info("Preparing static bindings {} in tenant {}".format(bindings, tenant.name))
 
             encap = self.get_static_binding_encap(segment_type, encap)
 
@@ -118,18 +139,9 @@ class CobraManager(object):
             ports = []
 
             for binding in bindings:
-                binding_config = binding.split("/")
-                pdn = None
-                if binding_config[0] == 'port':
-                    pdn = PORT_DN_PATH % (binding_config[1], binding_config[2], binding_config[3])
-                elif binding_config[0] == 'node':
-                    pdn = NODE_DN_PATH % (binding_config[1], binding_config[1], binding_config[2], binding_config[3])
-                elif binding_config[0] == 'dpc':
-                    pdn = DPCPORT_DN_PATH % (binding_config[1], binding_config[2])
-                elif binding_config[0] == 'vpc':
-                    pdn = VPCPORT_DN_PATH % (binding_config[1], binding_config[2])
+                pdn = self.get_pdn(binding)
 
-                LOG.info("Preparing static binding {}".format(pdn))
+                LOG.info("Preparing static binding %s encap %s for network %s", pdn , encap ,network_id )
 
                 port = fv.RsPathAtt(epg, pdn, encap=encap)
                 if delete:
@@ -141,17 +153,19 @@ class CobraManager(object):
 
             # Associate to Physical Domain
 
-            phys_dom = phys.DomP('uni', host_config['physical_domain'])
 
-            rs_dom_att = fv.RsDomAtt(epg, phys_dom.dn)
+            self._ensure_physdom(epg,host_config['physical_domain'],(delete and clear_phys_dom))
 
-            if delete and clear_phys_dom:
-                rs_dom_att.delete()
 
-            self.apic.commit(rs_dom_att)
 
         else:
            LOG.error("Network {} does not appear to be avilable in ACI, expected in tenant {}".format(network_id,self.tenant_manager.get_tenant_name(network_id)))
+
+    def create_subnet(self,subnet, external, address_scope_name):
+        self._configure_subnet(subnet, external=external, address_scope_name=address_scope_name,last_on_network=False, delete=False)
+
+    def delete_subnet(self,subnet, external, address_scope_name,last_on_network):
+        self._configure_subnet(subnet, external=external, address_scope_name=address_scope_name,last_on_network=last_on_network, delete=True)
 
     def ensure_subnet_created(self, network_id, address_scope_name, gateway):
         tenant = self.get_tenant(network_id)
@@ -170,7 +184,7 @@ class CobraManager(object):
             out = self._find_l3_out(network_id,l3_out)
 
             if out:
-                LOG.info('Configure L3 out for subnet, {}'.format(out.name))
+
                 subnet_outs.append(fv.RsBDSubnetToOut(subnet, out.name))
             else:
                 LOG.error('Cannot configure L3 out for subnet, {} not found in ACI configuration'.format(l3_out))
@@ -182,6 +196,15 @@ class CobraManager(object):
 
         self.apic.commit([subnet] + subnet_outs)
 
+    def ensure_subnet_deleted(self, network_id, gateway):
+        tenant = self.get_tenant(network_id)
+        bd = fv.BD(tenant, network_id)
+
+        subnet = fv.Subnet(bd, gateway)
+        subnet.delete()
+
+        self.apic.commit(subnet)
+
     def ensure_internal_network_configured(self, network_id, delete=False):
         tenant = self.get_tenant(network_id)
 
@@ -189,7 +212,7 @@ class CobraManager(object):
         vrf = fv.RsCtx(bd, self.tenant_default_vrf, tnFvCtxName=self.tenant_default_vrf)
         self.apic.commit(vrf)
 
-    def ensure_external_network_configured(self, network_id, address_scope_name, delete=False):
+    def ensure_external_network_configured(self, network_id, address_scope_name, last_on_network, delete=False):
         tenant = self.get_tenant(network_id)
 
         scope_config = self._get_address_scope_config(address_scope_name)
@@ -210,9 +233,9 @@ class CobraManager(object):
         for l3_out in l3_outs.split(','):
             out = self._find_l3_out(network_id, l3_out)
             if out:
-                LOG.info('Configure L3 out for network, {}'.format(out.name))
+
                 bd_out = fv.RsBDToOut(bd, out.name)
-                if delete:
+                if delete and last_on_network:
                     bd_out.delete()
                 bd_outs.append(bd_out)
             else:
@@ -235,28 +258,17 @@ class CobraManager(object):
             if type =='consumed':
                 for contract in contracts:
                     contract = fv.RsCons(epg, contract)
-                    if delete:
+                    if delete and last_on_network:
                         contract.delete()
                     epg_contracts.append(contract)
             elif type =='provided':
                 for contract in contracts:
                     contract = fv.RsProv(epg, contract)
-                    if delete:
+                    if delete and last_on_network :
                         contract.delete()
                     epg_contracts.append(contract)
 
         self.apic.commit([vrf] + bd_outs + epg_contracts)
-
-    def ensure_subnet_deleted(self, network_id, gateway):
-        tenant = self.get_tenant(network_id)
-        bd = fv.BD(tenant, network_id)
-
-        subnet = fv.Subnet(bd, gateway)
-        subnet.delete()
-
-        self.apic.commit(subnet)
-
-
 
 
     def get_tenant_bridge_domains(self, tenant):
@@ -277,7 +289,9 @@ class CobraManager(object):
     def get_tenant_epgs(self, tenant):
         if not tenant:
             return []
-        return self.apic.mo_dir.lookupByClass('fv.AEPg',parentDn=tenant.dn)
+        return self.apic.mo_dir.lookupByClass('fv.AEPg', parentDn=tenant.dn)
+
+
 
     def get_all_epgs(self):
         result = []
@@ -288,6 +302,130 @@ class CobraManager(object):
                 result += epgs
 
         return result
+
+
+
+    def get_bd(self,network_id):
+        try:
+            return self.apic.get_full_tenant(self.get_tenant_name(network_id)).BD[network_id]
+        except:
+            return None
+
+    def get_epg(self,network_id):
+        try:
+            app = self.get_app(network_id)
+            if app:
+                return app.epg[network_id]
+        except:
+            return None
+
+    def get_app(self,network_id):
+        return self.apic.get_full_tenant(self.get_tenant_name(network_id)).ap[self.apic_application_profile]
+
+
+    def get_or_create_tenant(self,network_id):
+        return self.apic.get_or_create_tenant(self.tenant_manager.get_tenant_name(network_id))
+
+    def get_tenant(self,network_id):
+        return self.apic.get_tenant(self.get_tenant_name(network_id))
+
+    def get_tenant_name(self,network_id):
+        return self.tenant_manager.get_tenant_name(network_id)
+
+
+    def clean_subnets(self, network):
+        network_id = network['id']
+        bd = self.get_bd(network_id)
+        if bd:
+            neutron_subnets = []
+
+            for neutron_subnet in network.get('subnets',[]):
+                neutron_subnets.append(self._get_gateway(neutron_subnet))
+
+            for subnet in bd.subnet:
+                if not subnet.ip in neutron_subnets:
+                  LOG.warning("Cleaning subnet %s on BD %s",subnet.ip, network_id)
+                  self.ensure_subnet_deleted(network_id ,subnet.ip)
+
+
+    def clean_physdoms(self, network):
+
+        network_id = network['id']
+        epg = self.get_epg(network_id)
+        if epg:
+            physdoms = []
+
+            for binding in network.get('bindings',[]):
+                host_config = binding.get('host_config',{})
+
+                if host_config:
+                    physdoms.append(host_config.get('physical_domain'))
+
+            for rsdom in epg.rsdomAtt:
+                physdom = rsdom.tDn[9:]
+                if not physdom in physdoms:
+                    LOG.warning("Cleaning physdom %s on EPG %s", physdom, network_id)
+                    self._ensure_physdom(epg,physdom, True)
+
+
+
+    def clean_bindings(self,network):
+        network_id = network['id']
+        epg = self.get_epg(network_id)
+
+        neutron_bindings = []
+
+        if epg:
+            ports = []
+
+
+            for binding in network.get('bindings',[]):
+                encap = self.get_static_binding_encap(binding['network_type'], binding['encap'])
+                host_config = binding['host_config']
+                if host_config:
+                    for port_binding in host_config.get('bindings',[]):
+                        pdn = self.get_pdn(port_binding)
+
+                        neutron_bindings.append({"port":pdn,"encap":encap})
+
+            for path in epg.rspathAtt:
+                if not {"port":path.tDn,"encap":path.encap} in neutron_bindings:
+                    LOG.warning("Cleaning binding %s on EPG %s", {"port":path.tDn,"encap":path.encap}, network_id)
+
+                    path.delete()
+                    ports.append(path)
+
+            if ports:
+                self.apic.commit(ports)
+
+    # Start Helper Methods
+
+    def _configure_subnet(self, subnet, external=False, address_scope_name=None,last_on_network=False, delete=False):
+        network_id = subnet['network_id']
+
+        if external:
+
+            gateway_ip = self._get_gateway(subnet)
+
+            self.ensure_external_network_configured(network_id, address_scope_name,last_on_network, delete)
+
+            if delete:
+                # TODO handle multiple subnet case ?
+                self.ensure_subnet_deleted(network_id, gateway_ip)
+
+            else:
+                self.ensure_subnet_created(network_id, address_scope_name, gateway_ip)
+
+
+
+        else:
+            self.ensure_internal_network_configured(network_id, delete)
+
+    def _get_gateway(self,subnet):
+        cidr = netaddr.IPNetwork(subnet['cidr'])
+        gateway_ip = '%s/%s' % (subnet['gateway_ip'],
+                                    str(cidr.prefixlen))
+        return gateway_ip;
 
     def _get_address_scope_config(self, address_scope_name):
 
@@ -321,12 +459,14 @@ class CobraManager(object):
 
         return None
 
-    def get_or_create_tenant(self,network_id):
-        return self.apic.get_or_create_tenant(self.tenant_manager.get_tenant_name(network_id))
+    def _ensure_physdom(self,epg,physdom,delete):
+        phys_dom = phys.DomP('uni', physdom)
 
-    def get_tenant(self,network_id):
-        return self.apic.get_tenant(self.tenant_manager.get_tenant_name(network_id))
+        rs_dom_att = fv.RsDomAtt(epg, phys_dom.dn)
 
+        if delete:
+            rs_dom_att.delete()
 
+        self.apic.commit(rs_dom_att)
 
-
+    # End Helper Methods

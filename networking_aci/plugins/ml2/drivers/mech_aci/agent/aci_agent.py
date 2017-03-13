@@ -14,20 +14,21 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import netaddr
+
 import collections
 import signal
 import time
 
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_log import helpers as log_helpers
 from neutron.i18n import _LI, _LW
 import oslo_messaging
 from oslo_service import loopingcall
 
 from stevedore import driver
 
-from neutron.services.tag import tag_plugin
+
 from neutron.common import config
 from neutron.agent import rpc as agent_rpc
 from neutron.common import constants as n_const
@@ -61,7 +62,6 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
         self.aci_config = self.conf.ml2_aci
 
-
         self.network_config = {
             'hostgroup_dict': aci_config.create_hostgroup_dictionary(),
             'address_scope_dict': aci_config.create_addressscope_dictionary()
@@ -71,13 +71,17 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.tenant_manager = driver.DriverManager(namespace='aci.tenant.managers', name=self.aci_config.tenant_manager,invoke_on_load=True).driver
 
         self.db = db.NeutronDbPluginV2()
-        self.tag_plugin = tag_plugin.TagPlugin()
+
 
         self.aci_manager = cobra_manager.CobraManager(self.network_config, self.aci_config,self.tenant_manager)
 
         self.aci_monitor_respawn_interval = aci_monitor_respawn_interval
         self.minimize_polling = minimize_polling,
-        self.polling_interval = 10
+        self.polling_interval = self.aci_config.polling_interval
+        self.sync_batch_size = self.aci_config.sync_batch_size
+        self.sync_marker = ""
+
+        self.prune_orphans = self.aci_config.prune_orphans
         self.iter_num = 0
         self.run_daemon_loop = True
         self.quitting_rpc_timeout = quitting_rpc_timeout
@@ -103,25 +107,29 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     # Start RPC callbacks
 
+    @log_helpers.log_method_call
     def bind_port_postcommit(self, port, host_config, segment, next_segment):
         self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config,
                                                            encap=next_segment['segmentation_id'])
-
+    @log_helpers.log_method_call
     def delete_port_postcommit(self, port, host_config, clear_phys_dom):
         self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config, encap=1, delete=True, clear_phys_dom=clear_phys_dom)
 
+    @log_helpers.log_method_call
     def create_network_postcommit(self, network):
         self.aci_manager.ensure_domain_and_epg(network['id'])
-        self.tag_plugin.update_tag(self.context, 'networks', network['id'],"monsoon3::aci::tenant::{}".format(self.tenant_manager.get_tenant_name(network['id'])))
 
+    @log_helpers.log_method_call
     def delete_network_postcommit(self, network, **kwargs):
         self.aci_manager.delete_domain_and_epg(network['id'])
 
+    @log_helpers.log_method_call
     def create_subnet_postcommit(self, subnet, external, address_scope_name):
-        self._configure_subnet(subnet, external=external, address_scope_name=address_scope_name, delete=False)
+        self.aci_manager.create_subnet(subnet, external=external, address_scope_name=address_scope_name,)
 
-    def delete_subnet_postcommit(self, subnet, external, address_scope_name):
-        self._configure_subnet(subnet, external=external, address_scope_name=address_scope_name, delete=True)
+    @log_helpers.log_method_call
+    def delete_subnet_postcommit(self, subnet, external, address_scope_name, last_on_network):
+        self.aci_manager.delete_subnet(subnet, external=external, address_scope_name=address_scope_name, last_on_network=last_on_network)
 
     # End RPC callbacks
 
@@ -129,11 +137,14 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     def setup_rpc(self):
 
-        self.plugin_rpc = agent_rpc.PluginApi(topics.PLUGIN)
-        self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
-
         # RPC network init
         self.context = context.get_admin_context()
+
+        self.plugin_rpc = agent_rpc.PluginApi(topics.PLUGIN)
+        self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
+        self.agent_rpc = rpc_api.AgentRpcClientAPI(self.context)
+
+
 
 
         # Define the listening consumers for the agent
@@ -148,7 +159,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
         report_interval = 30  # self.conf.AGENT.report_interval
         heartbeat = loopingcall.FixedIntervalLoopingCall(self._report_state)
-        heartbeat.start(interval=report_interval)
+        heartbeat.start(interval=report_interval, stop_on_exception=False)
 
     def _report_state(self):
 
@@ -200,6 +211,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                       "(%(polling_interval)s vs. %(elapsed)s)!",
                       {'polling_interval': self.polling_interval,
                        'elapsed': elapsed})
+
+            return
+
+
         self.iter_num = self.iter_num + 1
 
     def rpc_loop(self):
@@ -209,63 +224,77 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
             try:
 
-                # for tenant_name in self.tenant_manager.all_tenant_names():
-                #     tenant = self.aci_manager.apic.get_full_tenant(tenant_name)
-                #     if tenant:
-                #         LOG.info("Checking tenant {}".format(tenant.name))
-                #
-                #         bds = tenant.BD
-                #         aps = tenant.ap
-                #
-                #         for bd in bds:
-                #             LOG.info("Checking bridge domain {}".format(bd.name))
-                #             LOG.info("Subnets {}".format(len(bd.subnet)))
-                #
-                #         for ap in aps:
-                #             LOG.info("Checking EPGs in application {}".format(ap.name))
-                #             for epg in ap.epg:
-                #                 LOG.info("Checking EPG {}".format(epg.name))
-                #                 for binding in epg.rspathAtt:
-                #                     LOG.info("Checking binding {}".format(binding.dn))
-                #                 for contract in epg.ctrctCtxdefDn:
-                #                     LOG.info("Checking contract {}".format(contract.dn))
-                #
-                #
-                #
-                #
-                # # bds = self.aci_manager.get_all_bridge_domains()
-                # # epgs = self.aci_manager.get_all_epgs()
-                # # LOG.info("Managing {} Bridge domains and {} EPGS".format(len(bds),len(epgs)))
-                #
-                # all_ports = self.db.get_ports(self.context, filters={})
-                #all_networks = self.db.get_networks(self.context, filters={})
+                neutron_network_ids = self.agent_rpc.get_network_ids()
 
-                 #LOG.info("Managing {} Networks and {} Ports".format(len(all_networks), len(all_ports)))
+                neutron_network_count = self.agent_rpc.get_networks_count()
 
-                #for network in all_networks:
-                #  self.tag_plugin.update_tag(self.context, 'networks', network['id'],"monsoon3::aci::tenant::{}".format(self.tenant_manager.get_tenant_name(network['id'])))
+                bds = self.aci_manager.get_all_bridge_domains()
 
-                #     if self.tenant_manager.managed(network['id']):
-                #         LOG.info("Network {} is managed by this agent".format(network['id']))
-                #         self.create_network_postcommit(network)
+                epgs = self.aci_manager.get_all_epgs()
 
-                pass
+                LOG.info("Currently managing {} neutron networks and {} Bridge domains and {} EPGS".format(neutron_network_count, len(bds),len(epgs)))
 
-                # TO try and avoid concurrent issues, build a canddate list in the first pass and then execute on the next.
+                bd_names = []
+                for bd in bds :
+                    bd_names.append(bd.name)
 
-
-                # get dead BD's
-                # get dead EPGs
-                # get dead subnets
-                # get dead bindings
-
-                # get alive networks
-                # get alive subnets
-                # get alive ports
+                epg_names = []
+                for epg in epgs :
+                    epg_names.append(epg.name)
 
 
 
 
+                # Orphaned  - so network ids in ACI but not neutron
+                orphaned = []
+
+                for bd_name in bd_names:
+                    if(bd_name not in neutron_network_ids and bd_name not in orphaned):
+                        orphaned.append(bd_name)
+
+                for epg_name in epg_names:
+                    if(epg_name not in neutron_network_ids and epg_name not in orphaned):
+                        orphaned.append(epg_name)
+
+                LOG.info("EPG/BD check orphaned {}".format(orphaned))
+
+                if self.prune_orphans:
+                    LOG.info("Deleting Orphaned resources")
+                    for network_id in orphaned:
+                        LOG.info("Deleting EPG and BD for network %s  ",network_id)
+                        self.aci_manager.delete_domain_and_epg(network_id)
+
+                start = time.time()
+
+                neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size), marker=self.sync_marker)
+
+                if not neutron_networks:
+                    self.sync_marker = None
+                    continue
+
+
+                for network in neutron_networks:
+                    self.aci_manager.clean_subnets(network)
+                    self.aci_manager.clean_physdoms(network)
+                    self.aci_manager.clean_bindings(network)
+
+
+                    self.aci_manager.ensure_domain_and_epg(network.get('id'))
+
+                    for subnet in network.get('subnets'):
+                        self.aci_manager.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
+
+                    for binding in network.get('bindings'):
+                        if binding.get('host_config'):
+                            self.aci_manager.ensure_static_bindings_configured(network.get('id'), binding.get('host_config'),
+                                                           encap=binding.get('encap'))
+                        else:
+                            LOG.warning("No host configuration found in binding %s", binding)
+
+                LOG.debug("Scan and fix %s networks in %s seconds ",len(neutron_networks),time.time()-start)
+
+
+                self.sync_marker = neutron_networks[-1]['id']
 
             except Exception:
                 LOG.exception(_LE("Error while in rpc loop"))
@@ -283,30 +312,4 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
             signal.signal(signal.SIGHUP, self._handle_sighup)
             self.rpc_loop()
 
-    # Start Helper Methods
 
-    def _configure_subnet(self, subnet, external=False, address_scope_name=None, delete=False):
-        network_id = subnet['network_id']
-
-        LOG.info("****** configure subnet called with ")
-
-        if external:
-            cidr = netaddr.IPNetwork(subnet['cidr'])
-            gateway_ip = '%s/%s' % (subnet['gateway_ip'],
-                                    str(cidr.prefixlen))
-
-            self.aci_manager.ensure_external_network_configured(network_id, address_scope_name, delete)
-
-            if delete:
-                # TODO handle multiple subnet case ?
-                self.aci_manager.ensure_subnet_deleted(network_id, gateway_ip)
-
-            else:
-                self.aci_manager.ensure_subnet_created(network_id, address_scope_name, gateway_ip)
-
-
-
-        else:
-            self.aci_manager.ensure_internal_network_configured(network_id, delete)
-
-            # End Helper Methods

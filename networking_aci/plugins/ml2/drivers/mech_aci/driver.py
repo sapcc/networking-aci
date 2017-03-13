@@ -17,15 +17,21 @@
 
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_log import helpers as log_helpers
 from neutron import context
 from neutron.i18n import _LI
 from neutron.i18n import _LW
 from neutron.plugins.ml2 import driver_api as api
 from neutron.db import api as db_api
+from neutron.common import rpc as n_rpc
+from neutron.common import topics
+
 from neutron.plugins.ml2 import models as ml2_models
 from networking_aci.plugins.ml2.drivers.mech_aci import config
 from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
 from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
+from networking_aci.plugins.ml2.drivers.mech_aci import common
 
 LOG = logging.getLogger(__name__)
 
@@ -35,10 +41,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         LOG.info(_LI("ACI mechanism driver initializing..."))
 
 
-        self.network_config = {
-            'hostgroup_dict': config.create_hostgroup_dictionary(),
-            'address_scope_dict': config.create_addressscope_dictionary()
-        }
+        self.network_config = common.get_network_config()
 
         self.host_group_config = self.network_config['hostgroup_dict']
 
@@ -46,19 +49,36 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         self.context = context.get_admin_context_without_session()
         self.rpc_notifier = rpc_api.ACIRpcClientAPI(self.context)
+        self.start_rpc_listeners()
 
     def initialize(self):
 
         pass
+
+
+    def _setup_rpc(self):
+        """Initialize components to support agent communication."""
+        self.endpoints = [
+            rpc_api.AgentRpcCallback(),
+        ]
+
+    @log_helpers.log_method_call
+    def start_rpc_listeners(self):
+        """Start the RPC loop to let the plugin communicate with agents."""
+        self._setup_rpc()
+        self.topic = aci_constants.ACI_TOPIC
+        self.conn = n_rpc.create_connection(new=True)
+        self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
+
+        return self.conn.consume_in_threads()
+
+
 
     def bind_port(self, context):
         port = context.current
         network = context.network.current
         network_id = network['id']
         host = context.host
-
-
-        # binding:profile       | {"local_link_information": [{"switch_info": "sw-hec01-243", "port_id": "Ethernet3", "switch_id": "00:1c:73:a3:81:c9"}]}
 
         binding_profile = context.current.get('binding:profile')
         if binding_profile:
@@ -98,7 +118,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                 next_segment['network_type'] = segment_type
                 next_segment['physical_network'] = segment_physnet
                 next_segment['id'] = allocation.segment_id
-                # next_segment['is_dynamic'] = True
+                next_segment['is_dynamic'] = True
                 next_segment['segment_index'] = level
 
                 LOG.info("****** Next segment to bind")
@@ -121,10 +141,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
     def create_subnet_postcommit(self, context):
 
-        LOG.info("*****************************")
-        LOG.info("Create subnet post commit pre RPC")
-        LOG.info("*****************************")
-
         address_scope_name = None
 
         external = self._subnet_external(context)
@@ -138,7 +154,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                             context.current['id'])))
                 return
 
-            address_scope_name = self._get_address_scope_name(context, subnetpool_id)
+            address_scope_name = common.get_address_scope_name(context._plugin_context, subnetpool_id)
 
             if address_scope_name == None:
                 # TODO Set network to Down
@@ -150,16 +166,21 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.rpc_notifier.create_subnet(context.current, external=external, address_scope_name=address_scope_name)
 
     def delete_subnet_postcommit(self, context):
+        network_id = context.current['network_id']
         subnetpool_id = context.current['subnetpool_id']
         if subnetpool_id == None:
             LOG.warn(_LW(
                 "Subnet {} is attached to an external network but is not using a subnet pool, further configuration of this network in ACI is not possible".format(
                         context.current['id'])))
             return
-        address_scope_name = self._get_address_scope_name(context, subnetpool_id)
+        address_scope_name = common.get_address_scope_name(context._plugin_context, subnetpool_id)
         external = self._subnet_external(context)
 
-        self.rpc_notifier.delete_subnet(context.current, external=external, address_scope_name=address_scope_name)
+        subnets = self.db.get_subnets_by_network(context, network_id)
+
+        last_on_network = len(subnets)==0
+
+        self.rpc_notifier.delete_subnet(context.current, external=external, address_scope_name=address_scope_name,last_on_network=last_on_network)
 
     # Port callbacks
 
@@ -213,13 +234,9 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         return True
 
-
     def _host_or_host_group(self, host_id):
-        for hostgroup, hostgroup_config in self.host_group_config.iteritems():
-            if host_id in hostgroup_config['hosts']:
-                return hostgroup, hostgroup_config
+        return common.get_host_or_host_group(host_id,self.host_group_config)
 
-        return host_id, None
 
     @staticmethod
     def _subnet_external(context):
@@ -243,19 +260,4 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         return pool['name']
 
-    @staticmethod
-    def _get_address_scope_name(context, subnet_pool_id):
 
-        pool = context._plugin.get_subnetpool(context._plugin_context, subnet_pool_id)
-
-        if not pool:
-            LOG.warn(_LW("Subnet pool {} does not exist".format(subnet_pool_id)))
-            return
-
-        scope = context._plugin.get_address_scope(context._plugin_context, pool['address_scope_id'])
-
-        if not scope:
-            LOG.warn(_LW("Address scope {} does not exist".format(['pool.address_scope_id'])))
-            return
-
-        return scope['name']

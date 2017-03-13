@@ -48,19 +48,44 @@ aci_opts = [
                default='hash_ring',
                help=_("Name of tenant manager")),
 
+    cfg.IntOpt('polling_interval',
+               default=60,
+               help=_("Polling interval for sync task")),
+
+    cfg.IntOpt('sync_batch_size',
+               default=10,
+               help=_("Number of networks to process in on poll")),
+
+
+    cfg.BoolOpt('prune_orphans',
+               default=True,
+               help=_("Clean orphaned EPG and BD on ACI")),
 
     cfg.StrOpt('apic_application_profile',
                default='monsoon_lab_infrastructure',
                help=_("Name for the application profile on APIC")),
     cfg.StrOpt('tenant_default_vrf',
                default='lab-l2',
-               help=_("Name for the default vrf for tenant networks"))
+               help=_("Name for the default vrf for tenant networks")),
+
+
+
+
 
 ]
 
+cli_opts =[
 
+        cfg.StrOpt('network-id',
+               help=_("Network ID used in consistency check")),
+        cfg.StrOpt('mode',
+               default='check',
+               help=_("Check mode - either read only check or sync to fix inconsistencies"))
+
+]
 
 cfg.CONF.register_opts(aci_opts, "ml2_aci")
+#cfg.CONF.register_cli_opts(cli_opts)
 CONF = cfg.CONF
 CONF()
 
