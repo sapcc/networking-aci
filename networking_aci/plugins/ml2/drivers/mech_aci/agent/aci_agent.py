@@ -220,7 +220,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     def rpc_loop(self):
         start = time.time()
-        
+
         if self.sync_active:
             while self._check_and_handle_signal():
 
@@ -277,22 +277,27 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
 
                     for network in neutron_networks:
-                        self.aci_manager.clean_subnets(network)
-                        self.aci_manager.clean_physdoms(network)
-                        self.aci_manager.clean_bindings(network)
+                        try:
+                            self.aci_manager.clean_subnets(network)
+                            self.aci_manager.clean_physdoms(network)
+                            self.aci_manager.clean_bindings(network)
 
 
-                        self.aci_manager.ensure_domain_and_epg(network.get('id'))
+                            self.aci_manager.ensure_domain_and_epg(network.get('id'))
 
-                        for subnet in network.get('subnets'):
-                            self.aci_manager.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
+                            for subnet in network.get('subnets'):
+                                self.aci_manager.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
 
-                        for binding in network.get('bindings'):
-                            if binding.get('host_config'):
-                                self.aci_manager.ensure_static_bindings_configured(network.get('id'), binding.get('host_config'),
-                                                               encap=binding.get('encap'))
-                            else:
-                                LOG.warning("No host configuration found in binding %s", binding)
+                            for binding in network.get('bindings'):
+                                if binding.get('host_config'):
+                                    self.aci_manager.ensure_static_bindings_configured(network.get('id'), binding.get('host_config'),
+                                                                   encap=binding.get('encap'))
+                                else:
+                                    LOG.warning("No host configuration found in binding %s", binding)
+                        except Exception as err:
+                            LOG.error("Error while attempting to apply configuration to network %s",network.get('id'))
+                            LOG.exception(err)
+
 
                     LOG.info("Scan and fix %s networks in %s seconds ",len(neutron_networks),time.time()-start)
 
