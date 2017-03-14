@@ -295,8 +295,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                 else:
                                     LOG.warning("No host configuration found in binding %s", binding)
                         except Exception as err:
-                            LOG.error("Error while attempting to apply configuration to network %s",network.get('id'))
-                            LOG.exception(err)
+                            LOG.exception("Error while attempting to apply configuration to network %s",network.get('id'))
 
 
                     LOG.info("Scan and fix %s networks in %s seconds ",len(neutron_networks),time.time()-start)
