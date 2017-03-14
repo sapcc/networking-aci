@@ -44,6 +44,11 @@ aci_opts = [
                default="1:60",
                help=_("The individual ring items managed by an agent")),
 
+
+    cfg.BoolOpt('sync_active',
+               default=True,
+               help=_("Activate regular config sync")),
+
     cfg.StrOpt('tenant_manager',
                default='hash_ring',
                help=_("Name of tenant manager")),
