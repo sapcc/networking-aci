@@ -306,7 +306,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                 except Exception:
                     LOG.exception(_LE("Error while in rpc loop"))
 
-        self.loop_count_and_wait(start)
+                self.loop_count_and_wait(start)
 
     
 
