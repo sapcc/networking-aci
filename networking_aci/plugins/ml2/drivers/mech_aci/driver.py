@@ -118,7 +118,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                 next_segment['network_type'] = segment_type
                 next_segment['physical_network'] = segment_physnet
                 next_segment['id'] = allocation.segment_id
-                next_segment['is_dynamic'] = True
+                next_segment['is_dynamic'] = False
                 next_segment['segment_index'] = level
 
                 LOG.info("****** Next segment to bind")

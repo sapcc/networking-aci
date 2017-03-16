@@ -102,7 +102,7 @@ class AllocationsManager(object):
                         physical_network=segment_physnet,
                         segmentation_id=segmentation_id,
                         segment_index=level,
-                        is_dynamic=True
+                        is_dynamic=False
                 )
                 session.add(segment)
 
@@ -159,7 +159,7 @@ class AllocationsManager(object):
                     physical_network=segment_physnet,
                     segmentation_id=alloc.segmentation_id,
                     segment_index=level,
-                    is_dynamic=True
+                    is_dynamic=False
             )
             session.add(segment)
 
