@@ -29,10 +29,10 @@ from neutron.services.tag import tag_plugin
 LOG = log.getLogger(__name__)
 
 ENCAP_VLAN = 'vlan-%s'
-PORT_DN_PATH = 'topology/pod-1/paths-%s/pathep-[eth%s/%s]'
-VPCPORT_DN_PATH = 'topology/pod-1/protpaths-%s/pathep-[%s]'
-DPCPORT_DN_PATH = 'topology/pod-1/paths-%s/pathep-[%s]'
-NODE_DN_PATH = 'topology/pod-1/paths-%s/pathep-[Switch%s_%s-ports-%s_PolGrp]'
+PORT_DN_PATH = 'topology/%s/paths-%s/pathep-[eth%s/%s]'
+VPCPORT_DN_PATH = 'topology/%s/protpaths-%s/pathep-[%s]'
+DPCPORT_DN_PATH = 'topology/%s/paths-%s/pathep-[%s]'
+NODE_DN_PATH = 'topology/%s/paths-%s/pathep-[Switch%s_%s-ports-%s_PolGrp]'
 
 
 class CobraManager(object):
@@ -68,13 +68,13 @@ class CobraManager(object):
         binding_config = binding.split("/")
         pdn = None
         if binding_config[0] == 'port':
-            pdn = PORT_DN_PATH % (binding_config[1], binding_config[2], binding_config[3])
+            pdn = PORT_DN_PATH % (binding_config[1], binding_config[2], binding_config[3],binding_config[4])
         elif binding_config[0] == 'node':
-            pdn = NODE_DN_PATH % (binding_config[1], binding_config[1], binding_config[2], binding_config[3])
+            pdn = NODE_DN_PATH % (binding_config[1], binding_config[2], binding_config[2], binding_config[3],binding_config[4])
         elif binding_config[0] == 'dpc':
-            pdn = DPCPORT_DN_PATH % (binding_config[1], binding_config[2])
+            pdn = DPCPORT_DN_PATH % (binding_config[1], binding_config[2],binding_config[3])
         elif binding_config[0] == 'vpc':
-            pdn = VPCPORT_DN_PATH % (binding_config[1], binding_config[2])
+            pdn = VPCPORT_DN_PATH % (binding_config[1], binding_config[2],binding_config[3])
 
         return pdn
 
