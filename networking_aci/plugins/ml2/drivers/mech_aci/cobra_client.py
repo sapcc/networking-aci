@@ -15,6 +15,7 @@
 
 import collections
 import requests
+import requests.exceptions as rexc
 
 from oslo_log import log
 
@@ -31,6 +32,9 @@ from cobra.model.fv import Tenant
 LOG = log.getLogger(__name__)
 
 RETRY_LIMIT = 2
+
+FALLBACK_EXCEPTIONS = (rexc.ConnectionError, rexc.Timeout,
+rexc.TooManyRedirects, rexc.InvalidURL)
 
 requests.packages.urllib3.disable_warnings()
 
@@ -51,12 +55,19 @@ class CobraClient(object):
     def login(self):
         # TODO handle multiple hosts
         LOG.info("ACI Login")
-        login_session = LoginSession(self.api_base[0], self.user, self.password)
-        self.mo_dir = MoDirectory(login_session)
-        self.mo_dir.login()
 
-        LOG.info("Login session created, will expire at {} in {} seconds".format(login_session.refreshTime,login_session.refreshTimeoutSeconds))
+        for x in range(len(self.api_base)):
+            try:
+                login_session = LoginSession(self.api_base[0], self.user, self.password)
+                self.mo_dir = MoDirectory(login_session)
+                self.mo_dir.login()
 
+                LOG.info("Login session created, will expire at {} in {} seconds".format(login_session.refreshTime,login_session.refreshTimeoutSeconds))
+            except FALLBACK_EXCEPTIONS as exc:
+               LOG.info(('%s, falling back to a '
+                          'new address'), exc.message)
+               self.api_base.rotate(-1)
+               LOG.info(('New controller address: %s '), self.api_base[0])
 
     def logout(self):
         self.mo_dir.logout()
