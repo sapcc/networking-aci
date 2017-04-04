@@ -117,8 +117,8 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config, encap=1, delete=True, clear_phys_dom=clear_phys_dom)
 
     @log_helpers.log_method_call
-    def create_network_postcommit(self, network):
-        self.aci_manager.ensure_domain_and_epg(network['id'])
+    def create_network_postcommit(self, network,external):
+        self.aci_manager.ensure_domain_and_epg(network['id'], external=external)
 
     @log_helpers.log_method_call
     def delete_network_postcommit(self, network, **kwargs):
@@ -283,7 +283,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                             self.aci_manager.clean_bindings(network)
 
 
-                            self.aci_manager.ensure_domain_and_epg(network.get('id'))
+                            self.aci_manager.ensure_domain_and_epg(network.get('id'),external=network.get('router:external'))
 
                             for subnet in network.get('subnets'):
                                 self.aci_manager.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))

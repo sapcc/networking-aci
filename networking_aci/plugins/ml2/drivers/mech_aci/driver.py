@@ -134,7 +134,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
     # Network callbacks
     def create_network_postcommit(self, context):
-        self.rpc_notifier.create_network(context.current)
+        external = self._network_external(context)
+        self.rpc_notifier.create_network(context.current, external=external)
 
     def delete_network_postcommit(self, context):
         self.rpc_notifier.delete_network(context.current)
@@ -236,6 +237,18 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
     def _host_or_host_group(self, host_id):
         return common.get_host_or_host_group(host_id,self.host_group_config)
+
+
+    @staticmethod
+    def _network_external(context):
+        current = context.current
+        network_id = current['id']
+        network = context._plugin.get_network(context._plugin_context, network_id)
+
+        if network.get('router:external'):
+            return True
+
+        return False
 
 
     @staticmethod

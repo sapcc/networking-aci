@@ -217,7 +217,7 @@ class ConsistencyCheck(object):
 
 
     def sync(self):
-        self.aci_manager.ensure_domain_and_epg(self.network_id)
+        self.aci_manager.ensure_domain_and_epg(self.network_id,external=self.external)
 
         subnets = self.db.get_subnets_by_network(self.context,self.network_id)
 

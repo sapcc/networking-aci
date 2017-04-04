@@ -34,8 +34,8 @@ class ACIRpcAPI(object):
     def delete_port(self, rpc_context, port, host_config, clear_phys_dom):
         self.delete_port_postcommit(port, host_config, clear_phys_dom)
 
-    def create_network(self, rpc_context, network):
-        self.create_network_postcommit(network)
+    def create_network(self, rpc_context, network, external=False):
+        self.create_network_postcommit(network,external)
 
     def delete_network(self, rpc_context, network):
         self.delete_network_postcommit(network)
@@ -164,8 +164,8 @@ class ACIRpcClientAPI(object):
     def delete_port(self, port, host_config, clear_phys_dom):
         self._fanout().cast(self.rpc_context, 'delete_port', port=port, host_config=host_config, clear_phys_dom=clear_phys_dom)
 
-    def create_network(self, network):
-        self._fanout().cast(self.rpc_context, 'create_network', network=network)
+    def create_network(self, network, external):
+        self._fanout().cast(self.rpc_context, 'create_network', network=network, external=external)
 
     def delete_network(self, network):
         self._fanout().cast(self.rpc_context, 'delete_network', network=network)

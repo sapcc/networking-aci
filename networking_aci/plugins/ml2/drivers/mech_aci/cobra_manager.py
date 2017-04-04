@@ -84,10 +84,16 @@ class CobraManager(object):
 
         return encap
 
-    def ensure_domain_and_epg(self, network_id):
+    def ensure_domain_and_epg(self, network_id, external = False):
         tenant = self.get_or_create_tenant(network_id)
 
-        bd = fv.BD(tenant, network_id, arpFlood=1, unkMacUcastAct=0)
+        if external:
+            unicast_route = 1
+        else:
+            unicast_route = 0
+
+
+        bd = fv.BD(tenant, network_id, arpFlood=1, unkMacUcastAct=0,unicastRoute=unicast_route)
 
         app = fv.Ap(tenant, self.apic_application_profile)
 
@@ -210,6 +216,7 @@ class CobraManager(object):
 
         bd = fv.BD(tenant, network_id)
         vrf = fv.RsCtx(bd, self.tenant_default_vrf, tnFvCtxName=self.tenant_default_vrf)
+
         self.apic.commit(vrf)
 
     def ensure_external_network_configured(self, network_id, address_scope_name, last_on_network, delete=False):
