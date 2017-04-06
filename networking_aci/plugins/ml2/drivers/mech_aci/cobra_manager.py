@@ -89,11 +89,15 @@ class CobraManager(object):
 
         if external:
             unicast_route = 1
+            move_detect =1
+            limit_ip_learn_subnets = 1
         else:
             unicast_route = 0
+            move_detect = 0
+            limit_ip_learn_subnets = 0
 
 
-        bd = fv.BD(tenant, network_id, arpFlood=1, unkMacUcastAct=0,unicastRoute=unicast_route)
+        bd = fv.BD(tenant, network_id, arpFlood=1, unkMacUcastAct=0,unicastRoute=unicast_route,epMoveDetectMode=move_detect,limitIpLearnToSubnets=limit_ip_learn_subnets)
 
         app = fv.Ap(tenant, self.apic_application_profile)
 
