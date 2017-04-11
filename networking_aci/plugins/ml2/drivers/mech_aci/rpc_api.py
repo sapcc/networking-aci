@@ -97,7 +97,7 @@ class AgentRpcCallback(object):
         segment_dict = {}
 
         for segment in segments:
-            segment_dict[segment.get('id')] = {'id':segment.get('id'),'segmentation_id':segment.get('segmentation_id'),'phsyical_network':segment.get('physical_network'), 'network_type':segment.get('network_type')}
+            segment_dict[segment.get('id')] = {'id':segment.get('id'),'segmentation_id':segment.get('segmentation_id'),'physical_network':segment.get('physical_network'), 'network_type':segment.get('network_type')}
 
         result = {'id': network_id, 'name': network.get('name'), 'router:external': network.get('router:external'),'subnets':[],'bindings':[]}
 
@@ -110,7 +110,6 @@ class AgentRpcCallback(object):
             if pool_id:
                 address_scope_name = common.get_address_scope_name(self.context, pool_id)
             result['subnets'].append({'id':subnet.get('id'), 'network_id':network_id, 'cidr':subnet.get('cidr'), 'address_scope_name': address_scope_name, 'gateway_ip': subnet.get('gateway_ip')})
-
 
         ports = self.db.get_ports(self.context, {'network_id':[network_id]})
 
@@ -125,8 +124,6 @@ class AgentRpcCallback(object):
 
                 host_id, host_config = common.get_host_or_host_group(binding_host,host_group_config)
 
-
-
                 if binding_levels:
                     #for now we use binding level one
                     for binding in binding_levels:
@@ -135,7 +132,7 @@ class AgentRpcCallback(object):
                             # Store one binding for each binding host
                             segment = segment_dict.get(binding.segment_id)
                             if segment:
-                                result['bindings'].append({'binding:host_id':binding_host,'host_config':host_config,'encap':segment.get('segmentation_id'),'network_type':segment.get('network_type'),'phsyical_network':segment.get('physical_network')})
+                                result['bindings'].append({'binding:host_id':binding_host,'host_config':host_config,'encap':segment.get('segmentation_id'),'network_type':segment.get('network_type'),'physical_network':segment.get('physical_network')})
 
             processed_hosts.append(binding_host)
 
