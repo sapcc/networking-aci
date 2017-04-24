@@ -22,6 +22,7 @@ from neutron import context
 from neutron.plugins.ml2 import db as ml2_db
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import common
+import driver
 
 
 LOG = logging.getLogger(__name__)
@@ -111,18 +112,31 @@ class AgentRpcCallback(object):
                 address_scope_name = common.get_address_scope_name(self.context, pool_id)
             result['subnets'].append({'id':subnet.get('id'), 'network_id':network_id, 'cidr':subnet.get('cidr'), 'address_scope_name': address_scope_name, 'gateway_ip': subnet.get('gateway_ip')})
 
-        ports = self.db.get_ports(self.context, {'network_id':[network_id]})
+        ports = self.db.get_ports_with_binding(self.context, network_id)
 
         processed_hosts =[]
 
         for port in ports:
-            # for some reason the port binding mixin is not populating the host.
-            # its ineffecient but we use the ml2 db to get for each port.
+            port_binding = port.port_binding
+
+
             binding_host = ml2_db.get_port_binding_host(self.context.session, port['id'])
+
+            config_host =port_binding.get('host')
+
             if binding_host not in processed_hosts:
+                binding_profile = port_binding.get('profile')
+
+
+                if binding_profile:
+                    switch = driver.CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
+
+                    if switch:
+                        config_host = switch
+
                 binding_levels = ml2_db.get_binding_levels(self.context.session, port['id'],binding_host)
 
-                host_id, host_config = common.get_host_or_host_group(binding_host,host_group_config)
+                host_id, host_config = common.get_host_or_host_group(config_host,host_group_config)
 
                 if binding_levels:
                     #for now we use binding level one

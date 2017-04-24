@@ -13,10 +13,12 @@
 #    under the License.
 from oslo_log import log as logging
 from neutron.db import db_base_plugin_v2
+from neutron.db import models_v2
 from neutron.db import address_scope_db
 from neutron.db import external_net_db
 from neutron.db import portbindings_db
 from neutron.plugins.ml2 import db as ml2_db
+from neutron.plugins.ml2 import models as ml2_models
 from networking_aci.plugins.ml2.drivers.mech_aci import config
 
 LOG = logging.getLogger(__name__)
@@ -29,6 +31,14 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def __init__(self):
         pass
+
+    def get_ports_with_binding(self,context,network_id):
+        with context.session.begin(subtransactions=True):
+            query = context.session.query(models_v2.Port)
+            query1 = query.join(ml2_models.PortBinding)
+            bind_ports = query1.filter(models_v2.Port.network_id == network_id)
+
+            return bind_ports
 
 
 def get_network_config():

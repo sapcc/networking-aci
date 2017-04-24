@@ -14,7 +14,7 @@
 
 
 
-
+import ast
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
@@ -81,12 +81,11 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         host = context.host
 
         binding_profile = context.current.get('binding:profile')
-        if binding_profile:
-            lli = binding_profile.get('local_link_information')
-            # TODO validate assumption that we have 1 lli in list.
-            if lli[0]:
-                host = lli[0].get('switch_info')
-                LOG.info("Using link local information for binding host %s", host)
+
+        switch = CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
+
+        if switch:
+            host = switch
 
         LOG.info("Using binding host %s", host)
 
@@ -191,7 +190,17 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         network_id = context.network.current['id']
         segment = context.bottom_bound_segment
-        host_id, host_config = self._host_or_host_group(context.host)
+
+        host = context.host
+
+        binding_profile = context.current.get('binding:profile')
+
+        switch = CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
+
+        if switch:
+            host = switch
+
+        host_id, host_config = self._host_or_host_group(host)
 
         if not host_config:
             return False
@@ -237,6 +246,19 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
     def _host_or_host_group(self, host_id):
         return common.get_host_or_host_group(host_id,self.host_group_config)
+
+    @staticmethod
+    def switch_from_local_link(binding_profile):
+
+        if binding_profile:
+            lli = ast.literal_eval(binding_profile).get('local_link_information')
+            # TODO validate assumption that we have 1 lli in list.
+            if lli[0]:
+                switch = lli[0].get('switch_info')
+                if switch:
+                    LOG.info("Using link local information for binding host %s", switch)
+                    return switch
+
 
 
     @staticmethod
