@@ -29,7 +29,7 @@ from neutron.common import topics
 from neutron.plugins.ml2 import models as ml2_models
 from networking_aci.plugins.ml2.drivers.mech_aci import config
 from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
-from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
+import rpc_api
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import common
 
