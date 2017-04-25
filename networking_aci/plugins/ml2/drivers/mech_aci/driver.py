@@ -251,13 +251,20 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
     def switch_from_local_link(binding_profile):
 
         if binding_profile:
-            lli = ast.literal_eval(binding_profile).get('local_link_information')
-            # TODO validate assumption that we have 1 lli in list.
-            if lli[0]:
-                switch = lli[0].get('switch_info')
-                if switch:
-                    LOG.info("Using link local information for binding host %s", switch)
-                    return switch
+            try:
+
+                if not isinstance(binding_profile,dict):
+                    binding_profile = ast.literal_eval(binding_profile)
+
+                lli =binding_profile.get('local_link_information')
+                # TODO validate assumption that we have 1 lli in list.
+                if lli[0]:
+                    switch = lli[0].get('switch_info')
+                    if switch:
+                        LOG.info("Using link local information for binding host %s", switch)
+                        return switch
+            except ValueError :
+                LOG.info("binding Profile %s cannot be parsed",binding_profile)
 
 
 
