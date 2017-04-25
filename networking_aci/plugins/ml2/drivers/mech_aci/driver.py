@@ -29,9 +29,9 @@ from neutron.common import topics
 from neutron.plugins.ml2 import models as ml2_models
 from networking_aci.plugins.ml2.drivers.mech_aci import config
 from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
-import rpc_api
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import common
+import rpc_api
 
 LOG = logging.getLogger(__name__)
 
