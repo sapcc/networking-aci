@@ -39,12 +39,10 @@ LOG = logging.getLogger(__name__)
 class CiscoACIMechanismDriver(api.MechanismDriver):
     def __init__(self):
         LOG.info(_LI("ACI mechanism driver initializing..."))
-
-
+        self.topic = None
+        self.conn = None
         self.network_config = common.get_network_config()
-
         self.host_group_config = self.network_config['hostgroup_dict']
-
         self.allocations_manager = allocations.AllocationsManager(self.network_config)
 
         self.context = context.get_admin_context_without_session()
@@ -52,9 +50,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.start_rpc_listeners()
 
     def initialize(self):
-
         pass
-
 
     def _setup_rpc(self):
         """Initialize components to support agent communication."""
@@ -72,8 +68,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         return self.conn.consume_in_threads()
 
-
-
     def bind_port(self, context):
         port = context.current
         network = context.network.current
@@ -88,7 +82,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             host = switch
 
         LOG.info("Using binding host %s", host)
-
 
         host_id, host_config = self._host_or_host_group(host)
 
@@ -111,14 +104,15 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                               {'port': context.current['id']})
                     return False
 
-                next_segment = {}
-                next_segment['segmentation_id'] = allocation.segmentation_id
-                next_segment['network_id'] = network_id
-                next_segment['network_type'] = segment_type
-                next_segment['physical_network'] = segment_physnet
-                next_segment['id'] = allocation.segment_id
-                next_segment['is_dynamic'] = False
-                next_segment['segment_index'] = level
+                next_segment = {
+                    'segmentation_id': allocation.segmentation_id,
+                    'network_id': network_id,
+                    'network_type': segment_type,
+                    'physical_network': segment_physnet,
+                    'id': allocation.segment_id,
+                    'is_dynamic': False,
+                    'segment_index': level
+                }
 
                 LOG.info("****** Next segment to bind")
                 LOG.info(next_segment)
@@ -140,27 +134,26 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.rpc_notifier.delete_network(context.current)
 
     def create_subnet_postcommit(self, context):
-
         address_scope_name = None
 
         external = self._subnet_external(context)
         if external:
             subnetpool_id = context.current['subnetpool_id']
 
-            if subnetpool_id == None:
+            if subnetpool_id is None:
                 # TODO Set network to Down
                 LOG.warn(_LW(
                     "Subnet {} is attached to an external network but is not using a subnet pool, further configuration of this network in ACI is not possible".format(
-                            context.current['id'])))
+                        context.current['id'])))
                 return
 
             address_scope_name = common.get_address_scope_name(context._plugin_context, subnetpool_id)
 
-            if address_scope_name == None:
+            if address_scope_name is None:
                 # TODO Set network to Down
                 LOG.warn(_LW(
                     "Subnet {} is attached to an external network but in an address scope, further configuration of this network in ACI is not possible".format(
-                            context.current['id'])))
+                        context.current['id'])))
                 return
 
         self.rpc_notifier.create_subnet(context.current, external=external, address_scope_name=address_scope_name)
@@ -168,19 +161,20 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
     def delete_subnet_postcommit(self, context):
         network_id = context.current['network_id']
         subnetpool_id = context.current['subnetpool_id']
-        if subnetpool_id == None:
+        if subnetpool_id is None:
             LOG.warn(_LW(
                 "Subnet {} is attached to an external network but is not using a subnet pool, further configuration of this network in ACI is not possible".format(
-                        context.current['id'])))
+                    context.current['id'])))
             return
         address_scope_name = common.get_address_scope_name(context._plugin_context, subnetpool_id)
         external = self._subnet_external(context)
 
         subnets = self.db.get_subnets_by_network(context, network_id)
 
-        last_on_network = len(subnets)==0
+        last_on_network = len(subnets) == 0
 
-        self.rpc_notifier.delete_subnet(context.current, external=external, address_scope_name=address_scope_name,last_on_network=last_on_network)
+        self.rpc_notifier.delete_subnet(context.current, external=external, address_scope_name=address_scope_name,
+                                        last_on_network=last_on_network)
 
     # Port callbacks
 
@@ -208,65 +202,60 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         if segment:
             # Get segment from ml2_port_binding_levels based on segment_id and host
             # if no ports on this segment for host we can remove the aci allocation
-
             released = self.allocations_manager.release_segment(context.network.current, host_config, 1, segment)
 
             # Call to ACI to delete port if the segment is released i.e. port is the last for the network one on the host
             if released:
-                #Check if physical domain should be cleared
+                # Check if physical domain should be cleared
                 clear_phys_dom = self._clear_phys_dom(context.network.current, host_config, 1, segment)
-                self.rpc_notifier.delete_port(context.current, host_config,clear_phys_dom)
+                self.rpc_notifier.delete_port(context.current, host_config, clear_phys_dom)
 
     def _clear_phys_dom(self, network, host_config, level, segment):
         # TODO check that no other segment on the network is configure
         # to use the same phys_dom as this segment. If not we can
         # clear the phys dom on the EPG.
 
-        LOG.info("Checking if phys dom can be cleared for segment %(segment)s",{"segment":segment})
+        LOG.info("Checking if phys dom can be cleared for segment %(segment)s", {"segment": segment})
         session = db_api.get_session()
 
         segments = session.query(ml2_models.NetworkSegment).filter_by(network_id=network['id'])
 
         for other_segment in segments:
-
             bindings = session.query(ml2_models.PortBindingLevel).filter_by(segment_id=other_segment['id'], level=level)
 
             for binding in bindings:
                 binding_host_id, binding_host_config = self._host_or_host_group(binding['host'])
 
-                if binding_host_config['physical_domain']==host_config['physical_domain']:
-                    LOG.info("Checked if phys dom can be cleared for segment %(segment)s it is in use in segment %(other_segment)s",{"segment":segment['id'],"other_segment":other_segment['id']})
+                if binding_host_config['physical_domain'] == host_config['physical_domain']:
+                    LOG.info(
+                        "Checked if phys dom can be cleared for segment %(segment)s it is in use in segment %(other_segment)s",
+                        {"segment": segment['id'], "other_segment": other_segment['id']})
                     return False
 
-
-
-        LOG.info("Checked if phys dom can be cleared for segment %(segment)s, its not used can will be cleared",{"segment":segment['id']})
+        LOG.info("Checked if phys dom can be cleared for segment %(segment)s, its not used can will be cleared",
+                 {"segment": segment['id']})
 
         return True
 
     def _host_or_host_group(self, host_id):
-        return common.get_host_or_host_group(host_id,self.host_group_config)
+        return common.get_host_or_host_group(host_id, self.host_group_config)
 
     @staticmethod
     def switch_from_local_link(binding_profile):
-
         if binding_profile:
             try:
-
-                if not isinstance(binding_profile,dict):
+                if not isinstance(binding_profile, dict):
                     binding_profile = ast.literal_eval(binding_profile)
 
-                lli =binding_profile.get('local_link_information')
+                lli = binding_profile.get('local_link_information')
                 # TODO validate assumption that we have 1 lli in list.
                 if lli[0]:
                     switch = lli[0].get('switch_info')
                     if switch:
                         LOG.info("Using link local information for binding host %s", switch)
                         return switch
-            except ValueError :
-                LOG.info("binding Profile %s cannot be parsed",binding_profile)
-
-
+            except ValueError:
+                LOG.info("binding Profile %s cannot be parsed", binding_profile)
 
     @staticmethod
     def _network_external(context):
@@ -278,7 +267,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             return True
 
         return False
-
 
     @staticmethod
     def _subnet_external(context):
@@ -293,7 +281,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
     @staticmethod
     def _get_subnet_pool_name(context, subnet_pool_id):
-
         pool = context._plugin.get_subnetpool(context._plugin_context, subnet_pool_id)
 
         if not pool:
@@ -301,5 +288,3 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             return
 
         return pool['name']
-
-
