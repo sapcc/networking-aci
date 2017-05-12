@@ -249,8 +249,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
                 lli = binding_profile.get('local_link_information')
                 # TODO validate assumption that we have 1 lli in list.
-                if lli[0]:
-                    switch = lli[0].get('switch_info')
+                if lli and lli[0]:
+                    switch = lli[0].get('switch_info', None) or lli[0].get('switch_id', None)
                     if switch:
                         LOG.info("Using link local information for binding host %s", switch)
                         return switch
