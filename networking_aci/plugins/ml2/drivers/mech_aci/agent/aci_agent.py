@@ -62,9 +62,12 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
         self.aci_config = self.conf.ml2_aci
 
+        self.fixed_bindings = aci_config.create_fixed_bindings_dictionary()
+
         self.network_config = {
             'hostgroup_dict': aci_config.create_hostgroup_dictionary(),
-            'address_scope_dict': aci_config.create_addressscope_dictionary()
+            'address_scope_dict': aci_config.create_addressscope_dictionary(),
+            'fixed_bindings_dict': self.fixed_bindings
         }
 
         self.host_group_config = self.network_config['hostgroup_dict']
@@ -282,7 +285,6 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                             self.aci_manager.clean_physdoms(network)
                             self.aci_manager.clean_bindings(network)
 
-
                             self.aci_manager.ensure_domain_and_epg(network.get('id'),external=network.get('router:external'))
 
                             for subnet in network.get('subnets'):
@@ -294,6 +296,14 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                                                    encap=binding.get('encap'))
                                 else:
                                     LOG.warning("No host configuration found in binding %s", binding)
+
+                            fixed_bindings =  network.get('fixed_bindings')
+
+                            for fixed_binding in fixed_bindings:
+                                encap = fixed_binding.get('segment_id',None)
+                                self.aci_manager.ensure_static_bindings_configured(network.get('id'), fixed_binding,
+                                                                   encap=encap)
+
                         except Exception as err:
                             LOG.exception("Error while attempting to apply configuration to network %s",network.get('id'))
 

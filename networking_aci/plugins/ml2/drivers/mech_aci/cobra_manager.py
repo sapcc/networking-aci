@@ -366,6 +366,10 @@ class CobraManager(object):
         if epg:
             physdoms = []
 
+            fixed_bindings = network.get('fixed_bindings')
+            for fixed_binding in fixed_bindings:
+                physdoms.append(fixed_binding.get('physical_domain'))
+
             for binding in network.get('bindings',[]):
                 host_config = binding.get('host_config',{})
 
@@ -388,6 +392,13 @@ class CobraManager(object):
 
         if epg:
             ports = []
+
+            fixed_bindings = network.get('fixed_bindings')
+            for fixed_binding in fixed_bindings:
+                encap = self.get_static_binding_encap(fixed_binding['segment_type'], fixed_binding.get('segment_id'))
+                for port_binding in fixed_binding.get('bindings',[]):
+                    pdn = self.get_pdn(port_binding)
+                    neutron_bindings.append({"port":pdn,"encap":encap})
 
 
             for binding in network.get('bindings',[]):

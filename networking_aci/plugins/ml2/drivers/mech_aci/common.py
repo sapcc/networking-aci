@@ -44,7 +44,8 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 def get_network_config():
     return {
             'hostgroup_dict': config.create_hostgroup_dictionary(),
-            'address_scope_dict': config.create_addressscope_dictionary()
+            'address_scope_dict': config.create_addressscope_dictionary(),
+            'fixed_bindings_dict': config.create_fixed_bindings_dictionary()
             }
 
 def get_host_or_host_group(host_id,host_group_config):

@@ -20,6 +20,7 @@ from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context
 from neutron.plugins.ml2 import db as ml2_db
+from neutron.services.tag import tag_plugin
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import common
 import driver
@@ -53,6 +54,7 @@ class AgentRpcCallback(object):
     def __init__(self):
         self.db = common.DBPlugin()
         self.context = context.get_admin_context()
+        self.tag_plugin = tag_plugin.TagPlugin()
 
     @log_helpers.log_method_call
     def get_network(self, rpc_context, network_id):
@@ -93,14 +95,24 @@ class AgentRpcCallback(object):
         start = time.time()
         network_id = network.get('id')
         host_group_config = common.get_network_config()['hostgroup_dict']
+        fixed_binding_config = common.get_network_config()['fixed_bindings_dict']
         segments = common.get_segments(self.context, network_id)
+
+
+        tags = self.tag_plugin.get_tags(self.context, 'networks',network_id).get('tags',[])
+
+        network_fixed_bindings = []
+        for tag in tags:
+            network_fixed_binding = fixed_binding_config.get(tag, None)
+            if network_fixed_binding:
+                network_fixed_bindings.append(network_fixed_binding)
 
         segment_dict = {}
 
         for segment in segments:
             segment_dict[segment.get('id')] = {'id':segment.get('id'),'segmentation_id':segment.get('segmentation_id'),'physical_network':segment.get('physical_network'), 'network_type':segment.get('network_type')}
 
-        result = {'id': network_id, 'name': network.get('name'), 'router:external': network.get('router:external'),'subnets':[],'bindings':[]}
+        result = {'id': network_id, 'name': network.get('name'), 'router:external': network.get('router:external'),'subnets':[],'bindings':[],'fixed_bindings': network_fixed_bindings}
 
         subnets = self.db.get_subnets_by_network(self.context,network.get('id'))
 

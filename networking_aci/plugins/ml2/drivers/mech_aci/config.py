@@ -109,6 +109,19 @@ def _get_specific_config(prefix):
     return conf_dict
 
 
+def create_fixed_bindings_dictionary():
+    fixed_bindings_dict = {}
+    conf = _get_specific_config('fixed-binding')
+    for network_tag in conf:
+        fixed_bindings_dict[network_tag] = {}
+        for key, value in conf[network_tag]:
+            if key == 'bindings':
+                fixed_bindings_dict[network_tag][key] = value[0].split(",")
+            else:
+                fixed_bindings_dict[network_tag][key] = value[0]
+
+    return fixed_bindings_dict
+
 def create_addressscope_dictionary():
     scope_dict = {}
     conf = _get_specific_config('address-scope')
