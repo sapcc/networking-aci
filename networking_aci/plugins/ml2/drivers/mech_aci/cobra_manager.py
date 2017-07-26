@@ -366,7 +366,7 @@ class CobraManager(object):
         if epg:
             physdoms = []
 
-            fixed_bindings = network.get('fixed_bindings')
+            fixed_bindings = network.get('fixed_bindings',[])
             for fixed_binding in fixed_bindings:
                 physdoms.append(fixed_binding.get('physical_domain'))
 
