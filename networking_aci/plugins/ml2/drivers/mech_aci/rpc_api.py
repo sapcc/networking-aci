@@ -159,8 +159,7 @@ class AgentRpcCallback(object):
                             segment = segment_dict.get(binding.segment_id)
                             if segment:
                                 result['bindings'].append({'binding:host_id':binding_host,'host_config':host_config,'encap':segment.get('segmentation_id'),'network_type':segment.get('network_type'),'physical_network':segment.get('physical_network')})
-
-            processed_hosts.append(binding_host)
+                                processed_hosts.append(binding_host)
 
         LOG.info("get network %s :  %s seconds", network_id, (time.time() - start))
         return result
