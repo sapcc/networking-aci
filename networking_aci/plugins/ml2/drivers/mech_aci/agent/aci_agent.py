@@ -264,7 +264,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                     LOG.info("EPG/BD check orphaned {}".format(orphaned))
 
-                    if self.prune_orphans:
+                    if self.prune_orphans and neutron_network_count > 0 :
                         LOG.info("Deleting Orphaned resources")
                         for network_id in orphaned:
                             LOG.info("Deleting EPG and BD for network %s  ",network_id)
