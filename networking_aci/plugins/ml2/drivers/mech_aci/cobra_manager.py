@@ -93,7 +93,7 @@ class CobraManager(object):
             limit_ip_learn_subnets = 1
         else:
             unicast_route = 0
-            move_detect = 0
+            move_detect = 1
             limit_ip_learn_subnets = 0
 
 
