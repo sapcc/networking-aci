@@ -18,15 +18,15 @@ import ast
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
-from neutron import context
-from neutron.i18n import _LI
-from neutron.i18n import _LW
-from neutron.plugins.ml2 import driver_api as api
+from neutron_lib import context
+from networking_aci._i18n import _LI, _LW
+from neutron_lib.plugins.ml2 import api
 from neutron.db import api as db_api
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 
-from neutron.plugins.ml2 import models as ml2_models
+from neutron.db.models import segment as segment_model
+from neutron.plugins.ml2 import models
 from networking_aci.plugins.ml2.drivers.mech_aci import config
 from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
@@ -216,12 +216,12 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         # clear the phys dom on the EPG.
 
         LOG.info("Checking if phys dom can be cleared for segment %(segment)s", {"segment": segment})
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
 
-        segments = session.query(ml2_models.NetworkSegment).filter_by(network_id=network['id'])
+        segments = session.query(segment_model.NetworkSegment).filter_by(network_id=network['id'])
 
         for other_segment in segments:
-            bindings = session.query(ml2_models.PortBindingLevel).filter_by(segment_id=other_segment['id'], level=level)
+            bindings = session.query(models.PortBindingLevel).filter_by(segment_id=other_segment['id'], level=level)
 
             for binding in bindings:
                 binding_host_id, binding_host_config = self._host_or_host_group(binding['host'])

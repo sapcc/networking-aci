@@ -18,7 +18,7 @@ from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
-from neutron import context
+from neutron_lib import context
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.services.tag import tag_plugin
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
@@ -196,7 +196,7 @@ class ACIRpcClientAPI(object):
         self._fanout().cast(self.rpc_context, 'create_subnet', subnet=subnet, external=external,
                             address_scope_name=address_scope_name)
 
-    def delete_subnet(self, subnet, external=False, address_scope_name=None):
+    def delete_subnet(self, subnet, external=False, address_scope_name=None, last_on_network=None):
         self._fanout().cast(self.rpc_context, 'delete_subnet', subnet=subnet, external=external,
                             address_scope_name=address_scope_name,last_on_network=last_on_network)
 

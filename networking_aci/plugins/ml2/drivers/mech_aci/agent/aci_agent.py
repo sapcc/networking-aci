@@ -22,7 +22,7 @@ import time
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
-from neutron.i18n import _LI, _LW
+from networking_aci._i18n import _LI, _LW, _LE
 import oslo_messaging
 from oslo_service import loopingcall
 
@@ -31,11 +31,10 @@ from stevedore import driver
 
 from neutron.common import config
 from neutron.agent import rpc as agent_rpc
-from neutron.common import constants as n_const
+from neutron_lib import constants as n_const
 from neutron.common import topics
-from neutron.i18n import _LE
 from neutron.db import db_base_plugin_v2 as db
-from neutron import context
+from neutron_lib import context
 
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_manager
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants

@@ -16,7 +16,8 @@
 from sqlalchemy.orm.exc import NoResultFound
 from stevedore import driver
 from oslo_log import log as logging
-from neutron.common import exceptions as n_exc
+from neutron_lib import exceptions as n_exc
+from neutron.common import exceptions
 from neutron.db import api as db_api
 from neutron.plugins.ml2 import models as ml2_models
 from neutron.db import models_v2 as models
@@ -26,8 +27,8 @@ from neutron.db import db_base_plugin_v2 as db
 from neutron.db import external_net_db as extnet
 from neutron.db import address_scope_db as address_scope
 from neutron.db import portbindings_db as portbindings
-from neutron import context
-from neutron.extensions import address_scope as ext_address_scope
+from neutron_lib import context
+from neutron_lib.exceptions import address_scope as ext_address_scope
 
 
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_manager
@@ -288,7 +289,7 @@ class ConsistencyCheck(object):
             scope = self.db.get_address_scope(self.context,pool['address_scope_id'])
             if scope:
                 return scope['name']
-        except n_exc.SubnetPoolNotFound:
+        except exceptions.SubnetPoolNotFound:
             pass
         except ext_address_scope.AddressScopeNotFound:
             pass

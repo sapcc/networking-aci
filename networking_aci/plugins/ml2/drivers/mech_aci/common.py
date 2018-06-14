@@ -17,7 +17,7 @@ from neutron.db import models_v2
 from neutron.db import address_scope_db
 from neutron.db import external_net_db
 from neutron.db import portbindings_db
-from neutron.plugins.ml2 import db as ml2_db
+from neutron.db import segments_db as ml2_db
 from neutron.plugins.ml2 import models as ml2_models
 from networking_aci.plugins.ml2.drivers.mech_aci import config
 

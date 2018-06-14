@@ -21,12 +21,12 @@ from sqlalchemy import orm
 from oslo_utils import uuidutils
 
 from neutron.db import api as db_api
-from neutron.db import model_base
-from neutron.plugins.ml2 import models as ml2_models
+from neutron_lib.db import model_base
+from neutron.objects import network as ml2_models
 from neutron.plugins.ml2 import db
 from oslo_db import exception as db_exc
 from neutron.common import exceptions as exc
-from neutron.i18n import _LI
+from networking_aci._i18n import _LI
 from oslo_log import log
 
 LOG = log.getLogger(__name__)
@@ -84,7 +84,7 @@ class AllocationsManager(object):
         segment_type = host_config.get('segment_type', 'vlan')
         segment_physnet = host_config.get('physical_network', None)
 
-        session = db_api.get_session()
+        session = db_api.get_writer_session()
         segmentation_id = self._get_provider_attribute(network, "provider:segmentation_id")
         network_id = network["id"]
         segment = session.query(ml2_models.NetworkSegment).filter_by(segmentation_id=segmentation_id,
@@ -114,7 +114,7 @@ class AllocationsManager(object):
         segment_type = host_config.get('segment_type', 'vlan')
         segment_physnet = host_config.get('physical_network', None)
 
-        session = db_api.get_session()
+        session = db_api.get_writer_session()
         network_id = network['id']
 
         with session.begin(subtransactions=True):
@@ -203,7 +203,7 @@ class AllocationsManager(object):
     def _release_vlan_segment(self, network, host_config, level, segment):
         LOG.info("Releasing segment %(segment)s with top level VLAN segment", {"segment":segment})
 
-        session = db_api.get_session()
+        session = db_api.get_writer_session()
 
         with session.begin(subtransactions=True):
             # Delete the network segment
@@ -221,7 +221,7 @@ class AllocationsManager(object):
         segmentation_id = segment['segmentation_id']
         network_id = network['id']
 
-        session = db_api.get_session()
+        session = db_api.get_writer_session()
 
         with session.begin(subtransactions=True):
 
@@ -269,7 +269,7 @@ class AllocationsManager(object):
         # TODO need to survive if the DB is not ready or migrations aren\t run
         # TODO add a retry loop
 
-        session = db_api.get_session()
+        session = db_api.get_writer_session()
         with session.begin(subtransactions=True):
             allocations = dict()
             allocs = (session.query(AllocationsModel).with_lockmode('update'))

@@ -19,7 +19,7 @@ import argparse
 from oslo_config import cfg
 from oslo_log import log as logging
 
-from neutron.agent.common import config
+from neutron.conf.agent import common as config
 from neutron.common import config as common_config
 from networking_aci.plugins.ml2.drivers.mech_aci import config as aci_config
 
@@ -43,7 +43,7 @@ def main():
     conf = aci_config.CONF
 
     common_config.init(config_files(args.config_file))
-    config.setup_logging()
+    common_config.setup_logging()
 
 
 

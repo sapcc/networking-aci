@@ -23,7 +23,7 @@ from cobra.model import fv
 from cobra.model import phys
 from cobra import modelimpl
 
-from neutron import context
+from neutron_lib import context
 from neutron.services.tag import tag_plugin
 
 LOG = log.getLogger(__name__)

@@ -18,9 +18,9 @@ import sys
 from oslo_config import cfg
 from oslo_log import log as logging
 
-from neutron.agent.common import config
+from neutron.conf.agent import common as config
 from neutron.common import config as common_config
-from neutron.i18n import _LI
+from networking_aci._i18n import _LI
 from networking_aci.plugins.ml2.drivers.mech_aci.agent import aci_agent
 
 LOG = logging.getLogger(__name__)

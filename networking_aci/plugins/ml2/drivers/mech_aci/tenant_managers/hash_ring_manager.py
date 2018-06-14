@@ -14,15 +14,15 @@ class HashRingTenantManager(object):
         items =cfg.CONF.ml2_aci.tenant_items_managed.split(":")
 
         if len(items) != 2:
-           LOG.error("Managed items is incorrectly configured, should be in format n:m, where n is the starting tenant key and m is the last tenant key managed")
-           raise
+            LOG.error("Managed items is incorrectly configured, should be in format n:m, where n is the starting tenant key and m is the last tenant key managed")
+            assert()
 
         start = int(items[0])
         stop = int(items[1])
 
         if start < 1 or stop > self.ring_size:
-           LOG.error("Managed items is incorrectly configured, should be in format n:m, where n is the starting tenant key and m is the last tenant key managed")
-           raise
+            LOG.error("Managed items is incorrectly configured, should be in format n:m, where n is the starting tenant key and m is the last tenant key managed")
+            assert()
 
 
 
