@@ -256,7 +256,7 @@ class ConsistencyCheck(object):
         for port in ports:
             # for some reason the port binding mixin is not populating the host.
             # its ineffecient but we use the ml2 db to get for each port.
-            binding_host = ml2_db.get_port_binding_host(self.context.session, port['id'])
+            binding_host = ml2_db.get_port_binding_host(self.context, port['id'])
 
             if binding_host and (binding_host not in binding_hosts):
                 binding_hosts.append(binding_host)

@@ -132,7 +132,7 @@ class AgentRpcCallback(object):
             port_binding = port.port_binding
 
 
-            binding_host = ml2_db.get_port_binding_host(self.context.session, port['id'])
+            binding_host = ml2_db.get_port_binding_host(self.context, port['id'])
 
             config_host =port_binding.get('host')
 
