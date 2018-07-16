@@ -77,4 +77,4 @@ def get_address_scope_name(context, subnet_pool_id):
 
 
 def get_segments(context,network_id):
-    return ml2_db.get_network_segments(context.session,network_id)
+    return ml2_db.get_network_segments(context,network_id)
