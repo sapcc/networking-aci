@@ -22,8 +22,8 @@ from oslo_utils import uuidutils
 
 from neutron.db import api as db_api
 from neutron_lib.db import model_base
-from neutron.objects import network as ml2_models
-from neutron.plugins.ml2 import db
+from neutron.db.models import segment as ml2_models
+from neutron.plugins.ml2 import models
 from oslo_db import exception as db_exc
 from neutron.common import exceptions as exc
 from networking_aci._i18n import _LI
@@ -132,7 +132,7 @@ class AllocationsManager(object):
             if alloc:
                 # check if segment is existing, if not the allocation should be deleted and a new one allocated
                 segment = (session.query(ml2_models.NetworkSegment).filter_by(id=alloc.segment_id).first())
-                if (segment):
+                if segment:
                     return alloc
                 else:
                     # TODO : handle case when allocation is on a segment no longer configured for use
@@ -225,7 +225,7 @@ class AllocationsManager(object):
 
         with session.begin(subtransactions=True):
 
-            select = (session.query(ml2_models.PortBindingLevel).
+            select = (session.query(models.PortBindingLevel).
                       filter_by(segment_id=segment_id,level=level))
 
             if select.count() == 0:

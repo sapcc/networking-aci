@@ -22,6 +22,7 @@ from neutron_lib import context
 from networking_aci._i18n import _LI, _LW
 from neutron_lib.plugins.ml2 import api
 from neutron.db import api as db_api
+from neutron.db import l3_db
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 
@@ -169,7 +170,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         address_scope_name = common.get_address_scope_name(context._plugin_context, subnetpool_id)
         external = self._subnet_external(context)
 
-        subnets = self.db.get_subnets_by_network(context, network_id)
+        subnets = context._plugin.get_subnets_by_network(context, network_id)
 
         last_on_network = len(subnets) == 0
 
