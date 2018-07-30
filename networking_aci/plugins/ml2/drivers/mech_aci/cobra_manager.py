@@ -96,8 +96,13 @@ class CobraManager(object):
             move_detect = 0
             limit_ip_learn_subnets = 0
 
+        bd_opts = {'arpFlood':1, 'unkMacUcastAct':0,'unicastRoute':unicast_route,'epMoveDetectMode':move_detect,'limitIpLearnToSubnets':limit_ip_learn_subnets}
 
-        bd = fv.BD(tenant, network_id, arpFlood=1, unkMacUcastAct=0,unicastRoute=unicast_route,epMoveDetectMode=move_detect,limitIpLearnToSubnets=limit_ip_learn_subnets,epClear=1)
+        if self.aci_config.support_remote_mac_clear:
+            bd_opts['epClear'] = 1
+
+
+        bd = fv.BD(tenant, network_id,  **bd_opts)
 
         app = fv.Ap(tenant, self.apic_application_profile)
 

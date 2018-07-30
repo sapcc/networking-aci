@@ -73,9 +73,9 @@ aci_opts = [
                default='lab-l2',
                help=_("Name for the default vrf for tenant networks")),
 
-
-
-
+    cfg.BoolOpt('support_remote_mac_clear',
+                default=True,
+                help=_("Region has API version supporting remote MAC clear")),
 
 ]
 
