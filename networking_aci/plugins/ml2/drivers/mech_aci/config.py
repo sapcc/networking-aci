@@ -22,70 +22,70 @@ DEFAULT_ROOT_HELPER = ('sudo /usr/local/bin/neutron-rootwrap '
 aci_opts = [
     cfg.ListOpt('apic_hosts',
                 default=[],
-                help=_("An ordered list of host names or IP addresses of "
-                       "the APIC controller(s).")),
+                help="An ordered list of host names or IP addresses of "
+                       "the APIC controller(s)."),
     cfg.StrOpt('apic_username',
-               help=_("Username for the APIC controller")),
+               help="Username for the APIC controller"),
     cfg.StrOpt('apic_password',
-               help=_("Password for the APIC controller"), secret=True),
+               help="Password for the APIC controller", secret=True),
     cfg.StrOpt('apic_name_mapping',
                default='use_name',
-               help=_("Name mapping strategy to use: use_uuid | use_name")),
+               help="Name mapping strategy to use: use_uuid | use_name"),
     cfg.BoolOpt('apic_use_ssl', default=True,
-                help=_("Use SSL to connect to the APIC controller")),
+                help="Use SSL to connect to the APIC controller"),
     cfg.StrOpt('tenant_prefix',
                default='monsoon_lab',
-               help=_("Name for the tenant on APIC")),
+               help="Name for the tenant on APIC"),
     cfg.IntOpt('tenant_ring_size',
                default=60,
-               help=_("Size of tenant pool")),
+               help="Size of tenant pool"),
 
     cfg.StrOpt('tenant_items_managed',
                default="1:60",
-               help=_("The individual ring items managed by an agent")),
+               help="The individual ring items managed by an agent"),
 
 
     cfg.BoolOpt('sync_active',
                default=True,
-               help=_("Activate regular config sync")),
+               help="Activate regular config sync"),
 
     cfg.StrOpt('tenant_manager',
                default='hash_ring',
-               help=_("Name of tenant manager")),
+               help="Name of tenant manager"),
 
     cfg.IntOpt('polling_interval',
                default=60,
-               help=_("Polling interval for sync task")),
+               help="Polling interval for sync task"),
 
     cfg.IntOpt('sync_batch_size',
                default=10,
-               help=_("Number of networks to process in on poll")),
+               help="Number of networks to process in on poll"),
 
 
     cfg.BoolOpt('prune_orphans',
                default=True,
-               help=_("Clean orphaned EPG and BD on ACI")),
+               help="Clean orphaned EPG and BD on ACI"),
 
     cfg.StrOpt('apic_application_profile',
                default='monsoon_lab_infrastructure',
-               help=_("Name for the application profile on APIC")),
+               help="Name for the application profile on APIC"),
     cfg.StrOpt('tenant_default_vrf',
                default='lab-l2',
-               help=_("Name for the default vrf for tenant networks")),
+               help="Name for the default vrf for tenant networks"),
 
     cfg.BoolOpt('support_remote_mac_clear',
                 default=True,
-                help=_("Region has API version supporting remote MAC clear")),
+                help="Region has API version supporting remote MAC clear"),
 
 ]
 
 cli_opts =[
 
         cfg.StrOpt('network-id',
-               help=_("Network ID used in consistency check")),
+               help="Network ID used in consistency check"),
         cfg.StrOpt('mode',
                default='check',
-               help=_("Check mode - either read only check or sync to fix inconsistencies"))
+               help="Check mode - either read only check or sync to fix inconsistencies")
 
 ]
 
