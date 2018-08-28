@@ -19,6 +19,7 @@ import collections
 import signal
 import time
 
+from neutron_lib.exceptions import NetworkNotFound
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
@@ -272,12 +273,15 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                     start = time.time()
 
-                    neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size), marker=self.sync_marker)
-
-                    if not neutron_networks:
+                    try:
+                        neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size), marker=self.sync_marker)
+                    except NetworkNotFound:
                         self.sync_marker = None
                         continue
 
+                    if len(neutron_networks) == 0:
+                        self.sync_marker = None
+                        continue
 
                     for network in neutron_networks:
                         try:
