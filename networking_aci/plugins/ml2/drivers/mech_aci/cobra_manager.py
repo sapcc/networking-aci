@@ -24,7 +24,6 @@ from cobra.model import phys
 from cobra import modelimpl
 
 from neutron_lib import context
-from neutron.services.tag import tag_plugin
 
 LOG = log.getLogger(__name__)
 
@@ -57,6 +56,7 @@ class CobraManager(object):
 
 
         self.context = context.get_admin_context()
+        from neutron.services.tag import tag_plugin
         self.tag_plugin = tag_plugin.TagPlugin()
         self.tenant_manager = tenant_manager
 
