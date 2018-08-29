@@ -272,6 +272,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                         self.sync_marker = None
                         continue
 
+                    if len(neutron_networks) == 0:
+                        self.sync_marker = None
+                        continue
+
                     for network in neutron_networks:
                         try:
                             self.aci_manager.clean_subnets(network)
