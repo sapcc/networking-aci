@@ -90,8 +90,7 @@ class AllocationsManager(object):
         segment = session.query(ml2_models.NetworkSegment).filter_by(segmentation_id=segmentation_id,
                                                                      physical_network=segment_physnet,
                                                                      network_type=segment_type,
-                                                                     network_id=network_id,
-                                                                     level=level).first()
+                                                                     network_id=network_id).first()
 
         if not segment:
             with session.begin(subtransactions=True):
