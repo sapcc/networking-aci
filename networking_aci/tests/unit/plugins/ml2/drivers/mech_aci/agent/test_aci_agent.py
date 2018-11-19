@@ -12,18 +12,29 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import mock
+import sys
 
-from neutron.conf.agent import common as config  #noqa
 from networking_aci.tests.unit import utils
-from networking_aci.plugins.ml2.drivers.mech_aci.agent.aci_agent import AciNeutronAgent
 from neutron.tests import base
-from oslo_config import cfg
 from neutron_lib import exceptions as n_exc
+from oslo_config import cfg
 
+cfg.CONF.use_stderr = False
+cfg.CONF(args=[])
 
 class AciNeutronAgentTest(base.BaseTestCase):
     def setUp(self):
         super(AciNeutronAgentTest, self).setUp()
+        # lets mock aci/cobra
+        sys.modules['cobra'] = mock.MagicMock()
+        sys.modules['cobra.mit'] = mock.MagicMock()
+        sys.modules['cobra.mit.access'] = mock.MagicMock()
+        sys.modules['cobra.mit.session'] = mock.MagicMock()
+        sys.modules['cobra.mit.request'] = mock.MagicMock()
+        sys.modules['cobra.model'] = mock.MagicMock()
+        sys.modules['cobra.model.fv'] = mock.MagicMock()
+        from networking_aci.plugins.ml2.drivers.mech_aci.agent.aci_agent import AciNeutronAgent
+
         self.aci_agent = AciNeutronAgent()
 
         self.aci_agent.agent_rpc = mock.MagicMock()
@@ -42,6 +53,7 @@ class AciNeutronAgentTest(base.BaseTestCase):
         self.aci_agent.rpc_loop()
         self.assertIsNone(self.aci_agent.sync_marker, 'Sync marker should be none if network has been deleted meanwhile')
 
+    def test_rpc_loop_race_condition_2(self):
         self.aci_agent._check_and_handle_signal = mock.Mock(side_effect=[True, False, False])
         self.aci_agent.agent_rpc.get_networks = mock.Mock(return_value=[])
         self.aci_agent.sync_marker = 'non_existing_net_id'

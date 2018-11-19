@@ -12,6 +12,7 @@ oslo.serialization>=1.10.0              # Apache-2.0
 oslo.utils>=3.5.0                       # Apache-2.0
 
 python-neutronclient
+neutron-lib # Apache-2.0
 hash-ring
 
 #apicapi>=1.0.6
