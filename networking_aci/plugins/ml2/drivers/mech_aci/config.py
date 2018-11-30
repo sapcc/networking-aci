@@ -92,7 +92,7 @@ cli_opts =[
 cfg.CONF.register_opts(aci_opts, "ml2_aci")
 #cfg.CONF.register_cli_opts(cli_opts)
 CONF = cfg.CONF
-CONF()
+#CONF()
 
 
 def _get_specific_config(prefix):
