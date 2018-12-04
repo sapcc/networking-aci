@@ -250,11 +250,15 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
                 lli = binding_profile.get('local_link_information')
                 # TODO validate assumption that we have 1 lli in list.
-                if lli and lli[0]:
+                if lli and lli[0] and isinstance(lli[0],dict):
                     switch = lli[0].get('switch_info', None) or lli[0].get('switch_id', None)
                     if switch:
                         LOG.info("Using link local information for binding host %s", switch)
                         return switch
+                    else:
+                        LOG.error("Cannot determine switch for local link info %s in binding profile %s.", lli[0], binding_profile)
+                else:
+                    LOG.error("Local information %s is invalid in binding profile %s.", lli, binding_profile)
             except ValueError:
                 LOG.info("binding Profile %s cannot be parsed", binding_profile)
 
