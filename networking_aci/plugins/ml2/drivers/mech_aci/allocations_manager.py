@@ -231,9 +231,9 @@ class AllocationsManager(object):
 
             if select.count() == 0:
 
-                range_min, range_max = host_config['segment_range'].split(':')
+                segmentation_ids = self._segmentation_ids(host_config['segment_range'])
 
-                inside = (int(range_min) <= segmentation_id <= int(range_max))
+                inside = segmentation_id in segmentation_ids
 
                 query = (session.query(AllocationsModel).
                          filter_by(network_id=network_id, level=level, segment_type=segment_type,
@@ -256,11 +256,15 @@ class AllocationsManager(object):
     def _allocation_key(self, host_id, level, segment_type):
         return "{}_{}_{}".format(host_id, level, segment_type)
 
-    def _segmentation_ids(self, host_config):
-        segment_range = host_config['segment_range'].split(':')
-        segment_min = int(segment_range[0])
-        segment_max = int(segment_range[1])
-        return set(moves.range(segment_min, segment_max + 1))
+    @staticmethod
+    def _segmentation_ids(host_config):
+        segment_ranges = []
+        for segment in host_config['segment_range'].split(','):
+            segment_range_str = segment.strip().split(':')
+            segment_range = moves.range(int(segment_range_str[0]), int(segment_range_str[1]) + 1)
+            segment_ranges.extend(segment_range)
+
+        return set(segment_ranges)
 
     def _sync_allocations(self):
         LOG.info("Preparing ACI Allocations table")
