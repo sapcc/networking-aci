@@ -19,12 +19,12 @@ from oslo_log import helpers as log_helpers
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron_lib import context
+from neutron_lib.exceptions import NetworkNotFound
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.services.tag import tag_plugin
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import common
 import driver
-
 
 LOG = logging.getLogger(__name__)
 
@@ -66,10 +66,12 @@ class AgentRpcCallback(object):
     def get_networks(self, rpc_context, limit=None, marker=None):
         LOG.debug("limit %s marker %s",limit,marker)
         result=[]
-        networks = self.db.get_networks(self.context, sorts=[('id','desc')], limit=limit, marker=marker)
-
-        for network in networks:
-            result.append(self._get_network(network))
+        try:
+            networks = self.db.get_networks(self.context, sorts=[('id','desc')], limit=limit, marker=marker)
+            for network in networks:
+                result.append(self._get_network(network))
+        except NetworkNotFound:
+            LOG.debug("Network marker not found: %s", marker)
 
         LOG.debug("networks len %s",len(result))
 

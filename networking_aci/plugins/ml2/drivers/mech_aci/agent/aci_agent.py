@@ -266,11 +266,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                     start = time.time()
 
-                    try:
-                        neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size), marker=self.sync_marker)
-                    except NetworkNotFound:
-                        self.sync_marker = None
-                        continue
+                    neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size), marker=self.sync_marker)
 
                     if len(neutron_networks) == 0:
                         self.sync_marker = None
