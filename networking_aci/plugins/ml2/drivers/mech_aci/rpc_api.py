@@ -57,6 +57,23 @@ class AgentRpcCallback(object):
         self.tag_plugin = tag_plugin.TagPlugin()
 
     @log_helpers.log_method_call
+    def get_binding_count(self, rpc_context):
+        network_config = common.get_network_config()
+
+        bindings = network_config.get("hostgroup_dict",{})
+
+        host_groups = bindings.keys()
+
+
+        fixed_bindings = network_config.get("fixed_bindings_dict",{})
+
+        fixed_binding_networks = fixed_bindings.keys()
+
+
+        return len(host_groups)+len(fixed_binding_networks)
+
+
+    @log_helpers.log_method_call
     def get_network(self, rpc_context, network_id):
         network = self.db.get_network(self.context, network_id)
         return self._get_network(network)
@@ -228,3 +245,6 @@ class AgentRpcClientAPI(object):
 
     def get_network_ids(self):
         return self._fanout().call(self.rpc_context, 'get_network_ids',)
+
+    def get_binding_count(self):
+        return self._fanout().call(self.rpc_context, 'get_binding_count')

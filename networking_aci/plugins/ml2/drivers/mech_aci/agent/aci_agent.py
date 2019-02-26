@@ -223,88 +223,97 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
 
                 try:
-
-                    neutron_network_ids = self.agent_rpc.get_network_ids()
-
-                    neutron_network_count = self.agent_rpc.get_networks_count()
-
-                    bds = self.aci_manager.get_all_bridge_domains()
-
-                    epgs = self.aci_manager.get_all_epgs()
-
-                    LOG.info("Currently managing {} neutron networks and {} Bridge domains and {} EPGS".format(neutron_network_count, len(bds),len(epgs)))
-
-                    bd_names = []
-                    for bd in bds :
-                        bd_names.append(bd.name)
-
-                    epg_names = []
-                    for epg in epgs :
-                        epg_names.append(epg.name)
-
-
-
-
-                    # Orphaned  - so network ids in ACI but not neutron
-                    orphaned = []
-
-                    for bd_name in bd_names:
-                        if(bd_name not in neutron_network_ids and bd_name not in orphaned):
-                            orphaned.append(bd_name)
-
-                    for epg_name in epg_names:
-                        if(epg_name not in neutron_network_ids and epg_name not in orphaned):
-                            orphaned.append(epg_name)
-
-                    LOG.info("EPG/BD check orphaned {}".format(orphaned))
-
-                    if self.prune_orphans and neutron_network_count > 0 :
-                        LOG.info("Deleting Orphaned resources")
-                        for network_id in orphaned:
-                            LOG.info("Deleting EPG and BD for network %s  ",network_id)
-                            self.aci_manager.delete_domain_and_epg(network_id)
-
                     start = time.time()
+                    neutron_binding_count = self.agent_rpc.get_binding_count()
 
-                    neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size), marker=self.sync_marker)
+                    if neutron_binding_count == 0 :
+                        LOG.warning("Skipping RPC loop due to zero binding count")
 
-                    if len(neutron_networks) == 0:
-                        self.sync_marker = None
-                        continue
-
-                    for network in neutron_networks:
-                        try:
-                            self.aci_manager.clean_subnets(network)
-                            self.aci_manager.clean_physdoms(network)
-                            self.aci_manager.clean_bindings(network)
-
-                            self.aci_manager.ensure_domain_and_epg(network.get('id'),external=network.get('router:external'))
-
-                            for subnet in network.get('subnets'):
-                                self.aci_manager.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
-
-                            for binding in network.get('bindings'):
-                                if binding.get('host_config'):
-                                    self.aci_manager.ensure_static_bindings_configured(network.get('id'), binding.get('host_config'),
-                                                                   encap=binding.get('encap'))
-                                else:
-                                    LOG.warning("No host configuration found in binding %s", binding)
-
-                            fixed_bindings =  network.get('fixed_bindings')
-
-                            for fixed_binding in fixed_bindings:
-                                encap = fixed_binding.get('segment_id',None)
-                                self.aci_manager.ensure_static_bindings_configured(network.get('id'), fixed_binding,
-                                                                   encap=encap)
-
-                        except Exception as err:
-                            LOG.exception("Error while attempting to apply configuration to network %s",network.get('id'))
+                    else:
+                        LOG.warning("Total binding count {}".format(neutron_binding_count))
 
 
-                    LOG.info("Scan and fix %s networks in %s seconds ",len(neutron_networks),time.time()-start)
+                        neutron_network_ids = self.agent_rpc.get_network_ids()
+
+                        neutron_network_count = self.agent_rpc.get_networks_count()
+
+                        bds = self.aci_manager.get_all_bridge_domains()
+
+                        epgs = self.aci_manager.get_all_epgs()
+
+                        LOG.info("Currently managing {} neutron networks and {} Bridge domains and {} EPGS".format(neutron_network_count, len(bds),len(epgs)))
+
+                        bd_names = []
+                        for bd in bds :
+                            bd_names.append(bd.name)
+
+                        epg_names = []
+                        for epg in epgs :
+                            epg_names.append(epg.name)
 
 
-                    self.sync_marker = neutron_networks[-1]['id']
+
+
+                        # Orphaned  - so network ids in ACI but not neutron
+                        orphaned = []
+
+                        for bd_name in bd_names:
+                            if(bd_name not in neutron_network_ids and bd_name not in orphaned):
+                                orphaned.append(bd_name)
+
+                        for epg_name in epg_names:
+                            if(epg_name not in neutron_network_ids and epg_name not in orphaned):
+                                orphaned.append(epg_name)
+
+                        LOG.info("EPG/BD check orphaned {}".format(orphaned))
+
+                        if self.prune_orphans and neutron_network_count > 0 :
+                            LOG.info("Deleting Orphaned resources")
+                            for network_id in orphaned:
+                                LOG.info("Deleting EPG and BD for network %s  ",network_id)
+                                self.aci_manager.delete_domain_and_epg(network_id)
+
+
+
+                        neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size), marker=self.sync_marker)
+
+                        if len(neutron_networks) == 0:
+                            self.sync_marker = None
+                            continue
+
+                        for network in neutron_networks:
+                            try:
+                                self.aci_manager.clean_subnets(network)
+                                self.aci_manager.clean_physdoms(network)
+                                self.aci_manager.clean_bindings(network)
+
+                                self.aci_manager.ensure_domain_and_epg(network.get('id'),external=network.get('router:external'))
+
+                                for subnet in network.get('subnets'):
+                                    self.aci_manager.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
+
+                                for binding in network.get('bindings'):
+                                    if binding.get('host_config'):
+                                        self.aci_manager.ensure_static_bindings_configured(network.get('id'), binding.get('host_config'),
+                                                                       encap=binding.get('encap'))
+                                    else:
+                                        LOG.warning("No host configuration found in binding %s", binding)
+
+                                fixed_bindings =  network.get('fixed_bindings')
+
+                                for fixed_binding in fixed_bindings:
+                                    encap = fixed_binding.get('segment_id',None)
+                                    self.aci_manager.ensure_static_bindings_configured(network.get('id'), fixed_binding,
+                                                                       encap=encap)
+
+                            except Exception as err:
+                                LOG.exception("Error while attempting to apply configuration to network %s",network.get('id'))
+
+
+                        LOG.info("Scan and fix %s networks in %s seconds ",len(neutron_networks),time.time()-start)
+
+
+                        self.sync_marker = neutron_networks[-1]['id']
 
                 except Exception:
                     LOG.exception(_LE("Error while in rpc loop"))
