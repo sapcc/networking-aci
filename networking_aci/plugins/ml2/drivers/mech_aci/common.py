@@ -20,6 +20,7 @@ from neutron.db import portbindings_db
 from neutron.db import segments_db as ml2_db
 from neutron.plugins.ml2 import models as ml2_models
 from networking_aci.plugins.ml2.drivers.mech_aci import config
+from neutron_lib.exceptions import address_scope as ext_address_scope
 
 LOG = logging.getLogger(__name__)
 
@@ -66,11 +67,16 @@ def get_address_scope_name(context, subnet_pool_id):
     if not pool:
         LOG.warn("Subnet pool {} does not exist".format(subnet_pool_id))
         return
+    try:
+        scope = plugin.get_address_scope(context, pool['address_scope_id'])
 
-    scope = plugin.get_address_scope(context, pool['address_scope_id'])
+    except ext_address_scope.AddressScopeNotFound:
+        LOG.warn("Address scope {} does could not be found, check ACI config for correct configuration".format(['pool.address_scope_id']))
+        return
 
+    # This may not be needed no address scope not found is caught
     if not scope:
-        LOG.warn("Address scope {} does not exist".format(['pool.address_scope_id']))
+        LOG.warn("Address scope {} does not exist, check ACI config for correct configuration".format(['pool.address_scope_id']))
         return
 
     return scope.get('name')
