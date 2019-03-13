@@ -77,6 +77,11 @@ aci_opts = [
                 default=True,
                 help="Region has API version supporting remote MAC clear"),
 
+    cfg.BoolOpt('sync_allocations',
+                default=True,
+                help="Sync allocations on startup"),
+
+
 ]
 
 cli_opts =[

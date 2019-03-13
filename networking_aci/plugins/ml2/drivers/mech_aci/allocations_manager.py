@@ -19,7 +19,7 @@ from six import moves
 from sqlalchemy import orm
 
 from oslo_utils import uuidutils
-
+from oslo_config import cfg
 from neutron.db import api as db_api
 from neutron_lib.db import model_base
 from neutron.db.models import segment as ml2_models
@@ -46,7 +46,8 @@ class AllocationsModel(model_base.BASEV2):
 class AllocationsManager(object):
     def __init__(self, network_config):
         self.hostgroup_config = network_config['hostgroup_dict']
-        self._sync_allocations()
+        if cfg.CONF.ml2_aci.sync_allocations:
+            self._sync_allocations()
         self.primary_keys = set(dict(AllocationsModel.__table__.columns))
         self.primary_keys.remove("network_id")
 
