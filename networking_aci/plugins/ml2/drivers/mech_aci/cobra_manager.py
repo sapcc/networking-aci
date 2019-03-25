@@ -124,6 +124,10 @@ class CobraManager(object):
     def delete_domain_and_epg(self, network_id, transaction=None):
         tenant = self.get_tenant(network_id)
 
+        if tenant is not None:
+            LOG.warning("Cannot determine tenant for network {}. Aborting delete.".format(network_id))
+            return
+        
         bd = fv.BD(tenant, network_id)
         bd.delete()
 
