@@ -24,6 +24,8 @@ from cobra.model import phys
 from cobra import modelimpl
 
 from neutron_lib import context
+from neutron.extensions import tagging
+
 
 LOG = log.getLogger(__name__)
 
@@ -117,7 +119,10 @@ class CobraManager(object):
 
         self.apic.commit([app, epg, rsbd])
 
-        self.tag_plugin.update_tag(self.context, 'networks', network_id,"monsoon3::aci::tenant::{}".format(self.tenant_manager.get_tenant_name(network_id)))
+        try
+            self.tag_plugin.update_tag(self.context, 'networks', network_id,"monsoon3::aci::tenant::{}".format(self.tenant_manager.get_tenant_name(network_id)))
+        except tagging.TagResourceNotFound
+            LOG.warning("Tagging attempt made on missing network {} , network may have been deleted concurrently".format(network_id))
 
         return network_id
 
@@ -127,7 +132,7 @@ class CobraManager(object):
         if tenant is not None:
             LOG.warning("Cannot determine tenant for network {}. Aborting delete.".format(network_id))
             return
-        
+
         bd = fv.BD(tenant, network_id)
         bd.delete()
 
