@@ -119,7 +119,7 @@ class CobraManager(object):
 
         self.apic.commit([app, epg, rsbd])
 
-        try
+        try:
             self.tag_plugin.update_tag(self.context, 'networks', network_id,"monsoon3::aci::tenant::{}".format(self.tenant_manager.get_tenant_name(network_id)))
         except tagging.TagResourceNotFound:
             LOG.error("Tagging attempt made on missing network {} , network may have been deleted concurrently.".format(network_id))
