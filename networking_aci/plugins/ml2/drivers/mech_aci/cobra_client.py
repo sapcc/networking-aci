@@ -16,7 +16,7 @@
 import collections
 import requests
 import requests.exceptions as rexc
-
+import time
 from oslo_log import log
 
 from cobra.mit.access import MoDirectory
@@ -110,6 +110,11 @@ class CobraClient(object):
                     self.mo_dir.login()
                     LOG.info("New login session created")
                     self._retry(retries, e)
+                if e.error == 102:
+                    LOG.info("{} sleeping an retrying to avoid race condition".format(e.reason))
+                    time.sleep(1)
+                    self._retry(retries, e)
+          
                 else:
                     raise e
 
