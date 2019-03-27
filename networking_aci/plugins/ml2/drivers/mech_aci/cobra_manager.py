@@ -124,7 +124,7 @@ class CobraManager(object):
         tenant = self.get_tenant(network_id)
 
         if tenant is not None:
-            LOG.warning("Cannot determine tenant for network {}. Aborting delete.".format(network_id))
+            LOG.warning("Cannot determine tenant {} for network {}. Aborting delete.".format(self.tenant_manager.get_tenant_name(network_id),network_id))
             return
 
         bd = fv.BD(tenant, network_id)
