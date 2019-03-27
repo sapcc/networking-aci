@@ -16,6 +16,9 @@ import time
 import oslo_messaging
 from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
+
+from sqlalchemy.orm import exc as orm_exc
+
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron_lib import context
@@ -189,8 +192,9 @@ class AgentRpcCallback(object):
         try:
             self.tag_plugin.update_tag(rpc_context, 'networks', network_id,tag)
         except tagging.TagResourceNotFound:
-            LOG.error("Tagging attempt made on missing network {} , network may have been deleted concurrently.".format(network_id))
-
+            LOG.info("Tagging attempt made on missing network {} , network may have been deleted concurrently.".format(network_id))
+        except orm_exc.StaleDataError:
+            LOG.info("Tagging attempt resulted in stale data error on DB access for network {} , network may have been deleted concurrently.".format(network_id))
 
 class ACIRpcClientAPI(object):
     version = '1.0'

@@ -226,6 +226,11 @@ class CobraManager(object):
     def ensure_internal_network_configured(self, network_id, delete=False):
         tenant = self.get_tenant(network_id)
 
+        if tenant is None:
+            LOG.warning("Cannot determine tenant {} for network {}. Aborting configuration.".format(
+                self.tenant_manager.get_tenant_name(network_id), network_id))
+            return
+
         bd = fv.BD(tenant, network_id)
         vrf = fv.RsCtx(bd, self.tenant_default_vrf, tnFvCtxName=self.tenant_default_vrf)
 
