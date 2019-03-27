@@ -22,6 +22,7 @@ from neutron_lib import context
 from neutron_lib.exceptions import NetworkNotFound
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.services.tag import tag_plugin
+from neutron.extensions import tagging
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import common
 import driver
@@ -183,6 +184,13 @@ class AgentRpcCallback(object):
         LOG.info("get network %s :  %s seconds", network_id, (time.time() - start))
         return result
 
+    @log_helpers.log_method_call
+    def tag_network(self,rpc_context,network_id,tag):
+        try:
+            self.tag_plugin.update_tag(rpc_context, 'networks', network_id,tag)
+        except tagging.TagResourceNotFound:
+            LOG.error("Tagging attempt made on missing network {} , network may have been deleted concurrently.".format(network_id))
+
 
 class ACIRpcClientAPI(object):
     version = '1.0'
@@ -248,3 +256,6 @@ class AgentRpcClientAPI(object):
 
     def get_binding_count(self):
         return self._fanout().call(self.rpc_context, 'get_binding_count')
+
+    def tag_network(self, network_id,tag):
+        return self._fanout().call(self.rpc_context, 'tag_network', network_id=network_id,tag=tag)

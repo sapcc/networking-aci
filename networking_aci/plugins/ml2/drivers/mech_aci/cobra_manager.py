@@ -24,7 +24,6 @@ from cobra.model import phys
 from cobra import modelimpl
 
 from neutron_lib import context
-from neutron.extensions import tagging
 
 
 LOG = log.getLogger(__name__)
@@ -37,9 +36,10 @@ NODE_DN_PATH = 'topology/%s/paths-%s/pathep-[Switch%s_%s-ports-%s_PolGrp]'
 
 
 class CobraManager(object):
-    def __init__(self, network_config, aci_config, tenant_manager):
+    def __init__(self, agent_plugin,network_config, aci_config, tenant_manager):
         # Connect to the APIC
 
+        self.agent_plugin = agent_plugin
         self.aci_config = aci_config
         self.apic_application_profile = aci_config.apic_application_profile
         self.tenant_default_vrf = aci_config.tenant_default_vrf
@@ -58,8 +58,7 @@ class CobraManager(object):
 
 
         self.context = context.get_admin_context()
-        from neutron.services.tag import tag_plugin
-        self.tag_plugin = tag_plugin.TagPlugin()
+
         self.tenant_manager = tenant_manager
 
     @property
@@ -119,12 +118,7 @@ class CobraManager(object):
 
         self.apic.commit([app, epg, rsbd])
 
-        try:
-            self.tag_plugin.update_tag(self.context, 'networks', network_id,"monsoon3::aci::tenant::{}".format(self.tenant_manager.get_tenant_name(network_id)))
-        except tagging.TagResourceNotFound:
-            LOG.error("Tagging attempt made on missing network {} , network may have been deleted concurrently.".format(network_id))
-
-        return network_id
+        self.agent_plugin.tag_network(network_id,"monsoon3::aci::tenant::{}".format(self.tenant_manager.get_tenant_name(network_id)))
 
     def delete_domain_and_epg(self, network_id, transaction=None):
         tenant = self.get_tenant(network_id)

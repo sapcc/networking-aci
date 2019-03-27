@@ -70,7 +70,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.db = db.NeutronDbPluginV2()
 
 
-        self.aci_manager = cobra_manager.CobraManager(self.network_config, self.aci_config,self.tenant_manager)
+
 
         self.aci_monitor_respawn_interval = aci_monitor_respawn_interval
         self.minimize_polling = minimize_polling,
@@ -98,6 +98,8 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
             'configurations': {},
             'agent_type': aci_constants.ACI_AGENT_TYPE,
             'start_flag': True}
+
+        self.aci_manager = cobra_manager.CobraManager( self.agent_rpc,self.network_config, self.aci_config, self.tenant_manager)
 
         self.connection.consume_in_threads()
 
