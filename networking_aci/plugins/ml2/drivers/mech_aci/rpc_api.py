@@ -124,7 +124,7 @@ class AgentRpcCallback(object):
         try:
             tags = self.tag_plugin.get_tags(self.context, 'networks',network_id).get('tags',[])
         except tagging.TagResourceNotFound:
-            LOG.wanrning("Cannot find network {} while attempting to check static binding tag".format(network_id))
+            LOG.warning("Cannot find network {} while attempting to check static binding tag".format(network_id))
             tags =[]
 
         network_fixed_bindings = []
