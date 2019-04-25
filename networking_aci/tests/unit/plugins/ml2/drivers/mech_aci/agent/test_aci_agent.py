@@ -43,17 +43,10 @@ class AciNeutronAgentTest(base.BaseTestCase):
 
         self.aci_agent.agent_rpc.get_network_ids = mock.Mock(return_value=['abcd-efgh-ijkl'])
         self.aci_agent.agent_rpc.get_networks_count = mock.Mock(return_value=1)
+        self.aci_agent.polling_interval = 0
         utils.setup_aci_config(cfg)
 
-
     def test_rpc_loop_race_condition(self):
-        self.aci_agent._check_and_handle_signal = mock.Mock(side_effect=[True, False, False])
-        self.aci_agent.agent_rpc.get_networks = mock.Mock(side_effect=n_exc.NetworkNotFound(net_id='non_existing_net_id'))
-        self.aci_agent.sync_marker = 'non_existing_net_id'
-        self.aci_agent.rpc_loop()
-        self.assertIsNone(self.aci_agent.sync_marker, 'Sync marker should be none if network has been deleted meanwhile')
-
-    def test_rpc_loop_race_condition_2(self):
         self.aci_agent._check_and_handle_signal = mock.Mock(side_effect=[True, False, False])
         self.aci_agent.agent_rpc.get_networks = mock.Mock(return_value=[])
         self.aci_agent.sync_marker = 'non_existing_net_id'
