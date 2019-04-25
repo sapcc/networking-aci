@@ -276,8 +276,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                 self.aci_manager.delete_domain_and_epg(network_id)
 
 
-
-                        neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size), marker=self.sync_marker)
+                        try:
+                            neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size), marker=self.sync_marker)
+                        except NetworkNotFound:
+                            neutron_networks = []
 
                         if len(neutron_networks) == 0:
                             self.sync_marker = None
