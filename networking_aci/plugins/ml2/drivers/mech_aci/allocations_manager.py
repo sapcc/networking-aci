@@ -231,7 +231,7 @@ class AllocationsManager(object):
 
             if select.count() == 0:
 
-                segmentation_ids = self._segmentation_ids(host_config['segment_range'])
+                segmentation_ids = self._segmentation_ids(host_config)
 
                 inside = segmentation_id in segmentation_ids
 
