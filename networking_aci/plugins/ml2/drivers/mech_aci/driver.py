@@ -170,7 +170,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         address_scope_name = common.get_address_scope_name(context._plugin_context, subnetpool_id)
         external = self._subnet_external(context)
 
-        subnets = context._plugin.get_subnets_by_network(context, network_id)
+        subnets = context._plugin.get_subnets_by_network(context._plugin_context, network_id)
 
         last_on_network = len(subnets) == 0
 
