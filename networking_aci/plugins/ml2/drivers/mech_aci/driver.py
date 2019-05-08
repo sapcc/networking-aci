@@ -101,7 +101,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                 allocation = self.allocations_manager.allocate_segment(network, host_id, level, host_config)
 
                 if not allocation:
-                    LOG.error('Binding failed, could not allocate a segment for further binding levels for port %()s',
+                    LOG.error('Binding failed, could not allocate a segment for further binding levels for port %(port)s',
                               {'port': context.current['id']})
                     return False
 
