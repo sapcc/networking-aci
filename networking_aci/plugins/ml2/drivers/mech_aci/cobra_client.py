@@ -63,6 +63,7 @@ class CobraClient(object):
                 self.mo_dir.login()
 
                 LOG.info("Login session created, will expire at {} in {} seconds".format(login_session.refreshTime,login_session.refreshTimeoutSeconds))
+                break
             except FALLBACK_EXCEPTIONS as exc:
                LOG.info(('%s, falling back to a '
                           'new address'), exc.message)
