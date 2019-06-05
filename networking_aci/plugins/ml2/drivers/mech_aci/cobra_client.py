@@ -84,7 +84,7 @@ class CobraClient(object):
             except QueryError  as e:
                 LOG.info("Lookup to ACI failed due to {}:{} retrying {} of {}".format(e.error, e.reason,retries,RETRY_LIMIT))
                 if e.error == 403:
-                    self.mo_dir.login()
+                    self.login()
                     LOG.info("New login session created")
                     self._retry(retries, e)
                 else:
@@ -108,7 +108,7 @@ class CobraClient(object):
             except CommitError  as e:
                 LOG.info("Commit to ACI failed due to {}:{} retrying  {} of {}".format(e.error, e.reason, retries,RETRY_LIMIT))
                 if e.error == 403:
-                    self.mo_dir.login()
+                    self.login()
                     LOG.info("New login session created")
                     self._retry(retries, e)
                 if e.error == 102:
