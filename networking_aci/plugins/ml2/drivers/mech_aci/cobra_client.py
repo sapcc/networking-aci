@@ -77,18 +77,24 @@ class CobraClient(object):
         retries = 0
         while retries < RETRY_LIMIT:
             try:
-                uni_mo = self.mo_dir.lookupByDn(dn)
-                return uni_mo
+                return self.mo_dir.lookupByDn(dn)
             except SSLError as e:
                 self._retry(retries, e)
-            except QueryError  as e:
-                LOG.info("Lookup to ACI failed due to {}:{} retrying {} of {}".format(e.error, e.reason,retries,RETRY_LIMIT))
+            except QueryError as e:
+                self._retry(retries, e)
+                LOG.info("Lookup to ACI failed due to {}: {} retry {} of {}"
+                         "".format(e.error, e.reason, retries, RETRY_LIMIT))
                 if e.error == 403:
                     self.login()
                     LOG.info("New login session created")
-                    self._retry(retries, e)
                 else:
                     raise e
+            except FALLBACK_EXCEPTIONS as e:
+                self._retry(retries, e)
+                LOG.info("Lookup to ACI failed due to {}, triggering new login - retry {} of {}"
+                         "".format(e, retries, RETRY_LIMIT))
+                self.login()
+            retries += 1
 
     def commit(self, managed_objects):
         retries = 0
@@ -105,22 +111,26 @@ class CobraClient(object):
                 return self.mo_dir.commit(config_request)
             except SSLError as e:
                 self._retry(retries, e)
-            except CommitError  as e:
-                LOG.info("Commit to ACI failed due to {}:{} retrying  {} of {}".format(e.error, e.reason, retries,RETRY_LIMIT))
+            except CommitError as e:
+                self._retry(retries, e)
+                LOG.info("Commit to ACI failed due to {}: {} retry {} of {}"
+                         "".format(e.error, e.reason, retries, RETRY_LIMIT))
                 if e.error == 403:
                     self.login()
                     LOG.info("New login session created")
-                    self._retry(retries, e)
-                if e.error == 102:
-                    LOG.info("{} sleeping an retrying to avoid race condition".format(e.reason))
+                elif e.error == 102:
+                    LOG.info("{} sleeping and retrying to avoid race condition".format(e.reason))
                     time.sleep(1)
-                    self._retry(retries, e)
-          
                 else:
                     raise e
+            except FALLBACK_EXCEPTIONS as e:
+                self._retry(retries, e)
+                LOG.info("Lookup to ACI failed due to {}, triggering new login - retry {} of {}"
+                         "".format(e, retries, RETRY_LIMIT))
+                self.login()
+            retries += 1
 
     def _retry(self, retries, e):
-        retries += 1
         if retries >= RETRY_LIMIT:
             raise e
 
