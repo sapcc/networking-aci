@@ -12,16 +12,15 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-
 import sys
 
+from networking_aci._i18n import _LI
+from networking_aci.plugins.ml2.drivers.mech_aci.agent import aci_agent
+from neutron.common import config as common_config
+from neutron.conf.agent import common as config
 from oslo_config import cfg
 from oslo_log import log as logging
 
-from neutron.conf.agent import common as config
-from neutron.common import config as common_config
-from networking_aci._i18n import _LI
-from networking_aci.plugins.ml2.drivers.mech_aci.agent import aci_agent
 
 LOG = logging.getLogger(__name__)
 
@@ -34,7 +33,6 @@ def main():
     register_options()
     common_config.init(sys.argv[1:])
     config.setup_logging()
-
     agent = aci_agent.AciNeutronAgent()
 
     # Start everything.

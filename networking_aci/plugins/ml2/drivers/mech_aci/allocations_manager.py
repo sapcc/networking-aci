@@ -12,22 +12,19 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-
 import random
-import sqlalchemy as sa
-from six import moves
-from sqlalchemy import orm
 
-from oslo_utils import uuidutils
-from oslo_config import cfg
 from neutron.db import api as db_api
 from neutron_lib.db import model_base
 from neutron.db.models import segment as ml2_models
 from neutron.plugins.ml2 import models
-from oslo_db import exception as db_exc
-from neutron.common import exceptions as exc
-from networking_aci._i18n import _LI
+from oslo_config import cfg
 from oslo_log import log
+from oslo_utils import uuidutils
+from six import moves
+import sqlalchemy as sa
+
+from networking_aci._i18n import _LI
 
 LOG = log.getLogger(__name__)
 
@@ -57,14 +54,10 @@ class AllocationsManager(object):
 
     def network_type_not_supported(self, network, host_id, level, segment_type, segment_physnet):
         LOG.error("Network type " + network["provider:network_type"] + " is not supported in the ACI driver")
-        pass
 
     def allocate_segment(self, network, host_id, level, host_config):
-
         network_type = self._get_provider_attribute(network, "provider:network_type")
-
         allocate = getattr(self, "_allocate_" + network_type + "_segment", "network_type_not_supported")
-
         return allocate(network, host_id, level, host_config)
 
     def _get_provider_attribute(self, network, key):
@@ -73,7 +66,6 @@ class AllocationsManager(object):
 
         if not result:
             LOG.info(network)
-
             segments = network.get('segments', [])
             segment = segments[0]
             result = segment.get(key)
@@ -81,7 +73,6 @@ class AllocationsManager(object):
         return result
 
     def _allocate_vlan_segment(self, network, host_id, level, host_config):
-
         segment_type = host_config.get('segment_type', 'vlan')
         segment_physnet = host_config.get('physical_network', None)
 
@@ -114,22 +105,18 @@ class AllocationsManager(object):
         LOG.info(_LI("Allocating segment for network type VXLAN"))
         segment_type = host_config.get('segment_type', 'vlan')
         segment_physnet = host_config.get('physical_network', None)
-
-        session = db_api.get_writer_session()
         network_id = network['id']
 
+        session = db_api.get_writer_session()
         with session.begin(subtransactions=True):
-
             LOG.debug("Searching for available allocation for host id %(host_id)s "
                       "segment_type %(segment_type)s network_id %(network_id)s segment_physnet %(segment_physnet)s",
                       {"host_id": host_id, "segment_type": segment_type, "segment_physnet": segment_physnet,
                        "network_id": network_id}
-
                       )
 
             alloc = session.query(AllocationsModel).filter_by(host=host_id, level=level, segment_type=segment_type,
                                                               network_id=network_id).first()
-
             if alloc:
                 # check if segment is existing, if not the allocation should be deleted and a new one allocated
                 segment = (session.query(ml2_models.NetworkSegment).filter_by(id=alloc.segment_id).first())
@@ -165,47 +152,35 @@ class AllocationsManager(object):
             session.add(segment)
 
             raw_segment = dict((k, alloc[k]) for k in self.primary_keys)
-            LOG.debug("%(type)s segment allocated from pool "
-                      "with %(segment)s ",
-                      {"type": alloc.segment_type,
-                       "segment": alloc.segmentation_id})
+            LOG.debug("%(type)s segment allocated from pool with %(segment)s ",
+                      {"type": alloc.segment_type, "segment": alloc.segmentation_id})
 
             count = (session.query(AllocationsModel).
                      filter_by(network_id=None, **raw_segment).
                      update({"network_id": network_id, 'segment_id': segment.id}))
 
             if count:
-                LOG.debug("%(type)s segment allocated from pool "
-                          "success with %(segment)s ",
-                          {"type": alloc.segment_type,
-                           "segment": alloc.segment_id})
+                LOG.debug("%(type)s segment allocated from pool success with %(segment)s ",
+                          {"type": alloc.segment_type, "segment": alloc.segment_id})
                 return alloc
 
             # Segment allocated since select
-            LOG.debug("Allocate %(type)s segment from pool "
-                      "failed with segment %(segment)s",
-                      {"type": alloc.segment_type,
-                       "segment": alloc.segment_id,
-                       "level": alloc.level})
+            LOG.debug("Allocate %(type)s segment from pool failed with segment %(segment)s",
+                      {"type": alloc.segment_type, "segment": alloc.segment_id, "level": alloc.level})
 
             session.commit()
 
-            # saving real exception in case we exceeded amount of attempts
-
     def release_segment(self, network, host_config, level, segment):
-        LOG.info("Releasing segment %(segment)s",{"segment":segment})
-
+        LOG.info("Releasing segment %(segment)s", {"segment": segment})
         network_type = self._get_provider_attribute(network, "provider:network_type")
-
         release = getattr(self, "_release_" + network_type + "_segment", "network_type_not_supported")
 
         return release(network, host_config, level, segment)
 
     def _release_vlan_segment(self, network, host_config, level, segment):
-        LOG.info("Releasing segment %(segment)s with top level VLAN segment", {"segment":segment})
+        LOG.info("Releasing segment %(segment)s with top level VLAN segment", {"segment": segment})
 
         session = db_api.get_writer_session()
-
         with session.begin(subtransactions=True):
             # Delete the network segment
             query = (session.query(ml2_models.NetworkSegment).
@@ -214,27 +189,20 @@ class AllocationsManager(object):
             query.delete()
 
     def _release_vxlan_segment(self, network, host_config, level, segment):
-
-        LOG.info("Releasing segment %(segment)s with top level VXLAN segment",{"segment":segment})
-
+        LOG.info("Releasing segment %(segment)s with top level VXLAN segment", {"segment": segment})
         segment_type = segment['network_type']
         segment_id = segment['id']
         segmentation_id = segment['segmentation_id']
         network_id = network['id']
 
         session = db_api.get_writer_session()
-
         with session.begin(subtransactions=True):
-
             select = (session.query(models.PortBindingLevel).
-                      filter_by(segment_id=segment_id,level=level))
+                      filter_by(segment_id=segment_id, level=level))
 
             if select.count() == 0:
-
                 segmentation_ids = self._segmentation_ids(host_config)
-
                 inside = segmentation_id in segmentation_ids
-
                 query = (session.query(AllocationsModel).
                          filter_by(network_id=network_id, level=level, segment_type=segment_type,
                                    segment_id=segment_id))
@@ -268,12 +236,10 @@ class AllocationsManager(object):
 
     def _sync_allocations(self):
         LOG.info("Preparing ACI Allocations table")
-
-        level = 1  # Currently only supporting one level in heirarchy
+        level = 1  # Currently only supporting one level in hierarchy
 
         # TODO need to survive if the DB is not ready or migrations aren\t run
         # TODO add a retry loop
-
         session = db_api.get_writer_session()
         with session.begin(subtransactions=True):
             allocations = dict()

@@ -13,18 +13,19 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-
-
 import signal
 import time
 
-import oslo_messaging
 from neutron_lib import constants as n_const
 from neutron_lib import context
-from neutron_lib.exceptions import NetworkNotFound
+from neutron.agent import rpc as agent_rpc
+from neutron.common import config
+from neutron.common import topics
+from neutron.db import db_base_plugin_v2 as db
 from oslo_config import cfg
 from oslo_log import helpers as log_helpers
 from oslo_log import log as logging
+import oslo_messaging
 from oslo_service import loopingcall
 from stevedore import driver
 
@@ -33,10 +34,6 @@ from networking_aci.plugins.ml2.drivers.mech_aci import cobra_manager
 from networking_aci.plugins.ml2.drivers.mech_aci import config as aci_config
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
-from neutron.agent import rpc as agent_rpc
-from neutron.common import config
-from neutron.common import topics
-from neutron.db import db_base_plugin_v2 as db
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -65,12 +62,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         }
 
         self.host_group_config = self.network_config['hostgroup_dict']
-        self.tenant_manager = driver.DriverManager(namespace='aci.tenant.managers', name=self.aci_config.tenant_manager,invoke_on_load=True).driver
+        self.tenant_manager = driver.DriverManager(namespace='aci.tenant.managers', name=self.aci_config.tenant_manager,
+                                                   invoke_on_load=True).driver
 
         self.db = db.NeutronDbPluginV2()
-
-
-
 
         self.aci_monitor_respawn_interval = aci_monitor_respawn_interval
         self.minimize_polling = minimize_polling,
@@ -99,11 +94,9 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
             'agent_type': aci_constants.ACI_AGENT_TYPE,
             'start_flag': True}
 
-        self.aci_manager = cobra_manager.CobraManager( self.agent_rpc,self.network_config, self.aci_config, self.tenant_manager)
-
+        self.aci_manager = cobra_manager.CobraManager(self.agent_rpc, self.network_config, self.aci_config,
+                                                      self.tenant_manager)
         self.connection.consume_in_threads()
-
-
 
     # Start RPC callbacks
 
@@ -111,12 +104,14 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
     def bind_port_postcommit(self, port, host_config, segment, next_segment):
         self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config,
                                                            encap=next_segment['segmentation_id'])
-    @log_helpers.log_method_call
-    def delete_port_postcommit(self, port, host_config, clear_phys_dom):
-        self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config, encap=1, delete=True, clear_phys_dom=clear_phys_dom)
 
     @log_helpers.log_method_call
-    def create_network_postcommit(self, network,external):
+    def delete_port_postcommit(self, port, host_config, clear_phys_dom):
+        self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config, encap=1, delete=True,
+                                                           clear_phys_dom=clear_phys_dom)
+
+    @log_helpers.log_method_call
+    def create_network_postcommit(self, network, external):
         self.aci_manager.ensure_domain_and_epg(network['id'], external=external)
 
     @log_helpers.log_method_call
@@ -129,23 +124,19 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     @log_helpers.log_method_call
     def delete_subnet_postcommit(self, subnet, external, address_scope_name, last_on_network):
-        self.aci_manager.delete_subnet(subnet, external=external, address_scope_name=address_scope_name, last_on_network=last_on_network)
+        self.aci_manager.delete_subnet(subnet, external=external, address_scope_name=address_scope_name,
+                                       last_on_network=last_on_network)
 
     # End RPC callbacks
 
     # Start Agent mechanics
 
     def setup_rpc(self):
-
         # RPC network init
         self.context = context.get_admin_context()
-
         self.plugin_rpc = agent_rpc.PluginApi(topics.PLUGIN)
         self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
         self.agent_rpc = rpc_api.AgentRpcClientAPI(self.context)
-
-
-
 
         # Define the listening consumers for the agent
         consumers = [[aci_constants.ACI_TOPIC, topics.CREATE],
@@ -162,13 +153,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         heartbeat.start(interval=report_interval, stop_on_exception=False)
 
     def _report_state(self):
-
         try:
             self.state_rpc.report_state(self.context,
                                         self.agent_state)
-
             self.agent_state.pop('start_flag', None)
-
         except Exception:
             LOG.exception(_LE("Failed reporting state!"))
 
@@ -211,9 +199,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                       "(%(polling_interval)s vs. %(elapsed)s)!",
                       {'polling_interval': self.polling_interval,
                        'elapsed': elapsed})
-
             return
-
 
         self.iter_num = self.iter_num + 1
 
@@ -222,39 +208,30 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
         if self.sync_active:
             while self._check_and_handle_signal():
-
-
                 try:
                     start = time.time()
                     neutron_binding_count = self.agent_rpc.get_binding_count()
 
-                    if neutron_binding_count == 0 :
+                    if neutron_binding_count == 0:
                         LOG.warning("Skipping RPC loop due to zero binding count")
-
                     else:
                         LOG.warning("Total binding count {}".format(neutron_binding_count))
 
-
                         neutron_network_ids = self.agent_rpc.get_network_ids()
-
                         neutron_network_count = self.agent_rpc.get_networks_count()
-
                         bds = self.aci_manager.get_all_bridge_domains()
-
                         epgs = self.aci_manager.get_all_epgs()
 
-                        LOG.info("Currently managing {} neutron networks and {} Bridge domains and {} EPGS".format(neutron_network_count, len(bds),len(epgs)))
+                        LOG.info("Currently managing {} neutron networks and {} Bridge domains and {} EPGS"
+                                 .format(neutron_network_count, len(bds), len(epgs)))
 
                         bd_names = []
-                        for bd in bds :
+                        for bd in bds:
                             bd_names.append(bd.name)
 
                         epg_names = []
-                        for epg in epgs :
+                        for epg in epgs:
                             epg_names.append(epg.name)
-
-
-
 
                         # Orphaned  - so network ids in ACI but not neutron
                         orphaned = []
@@ -269,15 +246,14 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                         LOG.info("EPG/BD check orphaned {}".format(orphaned))
 
-                        if self.prune_orphans and neutron_network_count > 0 :
+                        if self.prune_orphans and neutron_network_count > 0:
                             LOG.info("Deleting Orphaned resources")
                             for network_id in orphaned:
-                                LOG.info("Deleting EPG and BD for network %s  ",network_id)
+                                LOG.info("Deleting EPG and BD for network %s", network_id)
                                 self.aci_manager.delete_domain_and_epg(network_id)
 
-
-
-                        neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size), marker=self.sync_marker)
+                        neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size),
+                                                                       marker=self.sync_marker)
 
                         if len(neutron_networks) == 0:
                             self.sync_marker = None
@@ -289,41 +265,39 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                 self.aci_manager.clean_physdoms(network)
                                 self.aci_manager.clean_bindings(network)
 
-                                self.aci_manager.ensure_domain_and_epg(network.get('id'),external=network.get('router:external'))
+                                self.aci_manager.ensure_domain_and_epg(network.get('id'),
+                                                                       external=network.get('router:external'))
 
                                 for subnet in network.get('subnets'):
-                                    self.aci_manager.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
+                                    self.aci_manager.create_subnet(subnet,
+                                                                   network.get('router:external'),
+                                                                   subnet.get('address_scope_name'))
 
                                 for binding in network.get('bindings'):
                                     if binding.get('host_config'):
-                                        self.aci_manager.ensure_static_bindings_configured(network.get('id'), binding.get('host_config'),
-                                                                       encap=binding.get('encap'))
+                                        self.aci_manager.ensure_static_bindings_configured(network.get('id'),
+                                                                                           binding.get('host_config'),
+                                                                                           encap=binding.get('encap'))
                                     else:
                                         LOG.warning("No host configuration found in binding %s", binding)
 
-                                fixed_bindings =  network.get('fixed_bindings')
+                                fixed_bindings = network.get('fixed_bindings')
 
                                 for fixed_binding in fixed_bindings:
-                                    encap = fixed_binding.get('segment_id',None)
+                                    encap = fixed_binding.get('segment_id', None)
                                     self.aci_manager.ensure_static_bindings_configured(network.get('id'), fixed_binding,
                                                                        encap=encap)
+                            except Exception:
+                                LOG.exception("Error while attempting to apply configuration to network %s",
+                                              network.get('id'))
 
-                            except Exception as err:
-                                LOG.exception("Error while attempting to apply configuration to network %s",network.get('id'))
-
-
-                        LOG.info("Scan and fix %s networks in %s seconds ",len(neutron_networks),time.time()-start)
-
-
+                        LOG.info("Scan and fix %s networks in %s seconds", len(neutron_networks), time.time() - start)
                         self.sync_marker = neutron_networks[-1]['id']
 
                 except Exception:
                     LOG.exception(_LE("Error while in rpc loop"))
 
                 self.loop_count_and_wait(start)
-
-    
-
 
     def daemon_loop(self):
         # Start everything.
@@ -332,5 +306,3 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         if hasattr(signal, 'SIGHUP'):
             signal.signal(signal.SIGHUP, self._handle_sighup)
             self.rpc_loop()
-
-

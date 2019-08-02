@@ -11,16 +11,17 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-import mock
 import sys
 
-from networking_aci.tests.unit import utils
+import mock
 from neutron.tests import base
-from neutron_lib import exceptions as n_exc
 from oslo_config import cfg
+
+from networking_aci.tests.unit import utils
 
 cfg.CONF.use_stderr = False
 cfg.CONF(args=[])
+
 
 class AciNeutronAgentTest(base.BaseTestCase):
     def setUp(self):
@@ -36,11 +37,10 @@ class AciNeutronAgentTest(base.BaseTestCase):
         from networking_aci.plugins.ml2.drivers.mech_aci.agent.aci_agent import AciNeutronAgent
 
         self.aci_agent = AciNeutronAgent()
-
         self.aci_agent.agent_rpc = mock.MagicMock()
         self.aci_agent.aci_manager = mock.MagicMock()
-        # Stop after one iteration
 
+        # Stop after one iteration
         self.aci_agent.agent_rpc.get_network_ids = mock.Mock(return_value=['abcd-efgh-ijkl'])
         self.aci_agent.agent_rpc.get_networks_count = mock.Mock(return_value=1)
         self.aci_agent.polling_interval = 0
@@ -51,4 +51,5 @@ class AciNeutronAgentTest(base.BaseTestCase):
         self.aci_agent.agent_rpc.get_networks = mock.Mock(return_value=[])
         self.aci_agent.sync_marker = 'non_existing_net_id'
         self.aci_agent.rpc_loop()
-        self.assertIsNone(self.aci_agent.sync_marker, 'Sync marker should be none if network has been deleted meanwhile')
+        self.assertIsNone(self.aci_agent.sync_marker,
+                          'Sync marker should be none if network has been deleted meanwhile')

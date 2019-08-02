@@ -12,18 +12,16 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-
 from oslo_config import cfg
 
 DEFAULT_ROOT_HELPER = ('sudo /usr/local/bin/neutron-rootwrap '
                        '/etc/neutron/rootwrap.conf')
 
-
 aci_opts = [
     cfg.ListOpt('apic_hosts',
                 default=[],
                 help="An ordered list of host names or IP addresses of "
-                       "the APIC controller(s)."),
+                     "the APIC controller(s)."),
     cfg.StrOpt('apic_username',
                help="Username for the APIC controller"),
     cfg.StrOpt('apic_password',
@@ -39,65 +37,51 @@ aci_opts = [
     cfg.IntOpt('tenant_ring_size',
                default=60,
                help="Size of tenant pool"),
-
     cfg.StrOpt('tenant_items_managed',
                default="1:60",
                help="The individual ring items managed by an agent"),
-
-
     cfg.BoolOpt('sync_active',
                default=True,
                help="Activate regular config sync"),
-
     cfg.StrOpt('tenant_manager',
                default='hash_ring',
                help="Name of tenant manager"),
-
     cfg.IntOpt('polling_interval',
                default=60,
                help="Polling interval for sync task"),
-
     cfg.IntOpt('sync_batch_size',
                default=10,
                help="Number of networks to process in on poll"),
-
-
     cfg.BoolOpt('prune_orphans',
                default=True,
                help="Clean orphaned EPG and BD on ACI"),
-
     cfg.StrOpt('apic_application_profile',
                default='monsoon_lab_infrastructure',
                help="Name for the application profile on APIC"),
     cfg.StrOpt('tenant_default_vrf',
                default='lab-l2',
                help="Name for the default vrf for tenant networks"),
-
     cfg.BoolOpt('support_remote_mac_clear',
                 default=True,
                 help="Region has API version supporting remote MAC clear"),
-
     cfg.BoolOpt('sync_allocations',
                 default=True,
                 help="Sync allocations on startup"),
-
-
 ]
 
-cli_opts =[
 
+cli_opts = [
         cfg.StrOpt('network-id',
                help="Network ID used in consistency check"),
         cfg.StrOpt('mode',
                default='check',
                help="Check mode - either read only check or sync to fix inconsistencies")
-
 ]
 
 cfg.CONF.register_opts(aci_opts, "ml2_aci")
-#cfg.CONF.register_cli_opts(cli_opts)
+# cfg.CONF.register_cli_opts(cli_opts)
 CONF = cfg.CONF
-#CONF()
+# CONF()
 
 
 def _get_specific_config(prefix):
@@ -127,6 +111,7 @@ def create_fixed_bindings_dictionary():
 
     return fixed_bindings_dict
 
+
 def create_addressscope_dictionary():
     scope_dict = {}
     conf = _get_specific_config('address-scope')
@@ -134,6 +119,7 @@ def create_addressscope_dictionary():
         scope_dict[scope_id] = {}
         for key, value in conf[scope_id]:
             scope_dict[scope_id][key] = value[0]
+
     return scope_dict
 
 

@@ -1,12 +1,11 @@
 from oslo_config import cfg
 
+
 class SimpleTenantManager(object):
-
     def __init__(self):
+        self.tenant_prefix = cfg.CONF.ml2_aci.tenant_prefix
 
-        self.tenant_prefix =cfg.CONF.ml2_aci.tenant_prefix
-
-    def get_tenant_name(self,key):
+    def get_tenant_name(self, key):
         return self.tenant_prefix
 
     def get_all_tenant_names(self):
@@ -14,6 +13,3 @@ class SimpleTenantManager(object):
 
     def managed(self, key):
         return True
-
-
-
