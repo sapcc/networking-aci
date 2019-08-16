@@ -38,8 +38,7 @@ MODE_SYNC = 'sync'
 
 class DbPlugin(db.NeutronDbPluginV2,
                extnet.External_net_db_mixin,
-               address_scope.AddressScopeDbMixin,
-               portbindings.PortBindingMixin):
+               address_scope.AddressScopeDbMixin):
     pass
 
 

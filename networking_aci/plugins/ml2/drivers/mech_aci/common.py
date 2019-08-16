@@ -27,7 +27,6 @@ LOG = logging.getLogger(__name__)
 
 
 class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
-               portbindings_db.PortBindingMixin,
                address_scope_db.AddressScopeDbMixin,
                external_net_db.External_net_db_mixin):
 
