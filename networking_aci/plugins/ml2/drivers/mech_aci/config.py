@@ -122,20 +122,6 @@ def create_addressscope_dictionary():
     return scope_dict
 
 
-def create_host_dictionary():
-    host_dict = {}
-    conf = _get_specific_config('aci-host')
-    for host in conf:
-        host_dict[host] = {}
-        for key, value in conf[host]:
-            if key == 'bindings':
-                host_dict[host][key] = value[0].split(",")
-            else:
-                host_dict[host][key] = value[0]
-
-    return host_dict
-
-
 def create_hostgroup_dictionary():
     host_dict = {}
     conf = _get_specific_config('aci-hostgroup')
