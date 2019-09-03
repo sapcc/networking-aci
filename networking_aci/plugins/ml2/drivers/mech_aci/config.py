@@ -41,8 +41,8 @@ aci_opts = [
                default="1:60",
                help="The individual ring items managed by an agent"),
     cfg.BoolOpt('sync_active',
-               default=True,
-               help="Activate regular config sync"),
+                default=True,
+                help="Activate regular config sync"),
     cfg.StrOpt('tenant_manager',
                default='hash_ring',
                help="Name of tenant manager"),
@@ -53,8 +53,8 @@ aci_opts = [
                default=10,
                help="Number of networks to process in on poll"),
     cfg.BoolOpt('prune_orphans',
-               default=True,
-               help="Clean orphaned EPG and BD on ACI"),
+                default=True,
+                help="Clean orphaned EPG and BD on ACI"),
     cfg.StrOpt('apic_application_profile',
                default='monsoon_lab_infrastructure',
                help="Name for the application profile on APIC"),
@@ -71,10 +71,9 @@ aci_opts = [
 
 
 cli_opts = [
-        cfg.StrOpt('network-id',
+    cfg.StrOpt('network-id',
                help="Network ID used in consistency check"),
-        cfg.StrOpt('mode',
-               default='check',
+    cfg.StrOpt('mode', default='check',
                help="Check mode - either read only check or sync to fix inconsistencies")
 ]
 
