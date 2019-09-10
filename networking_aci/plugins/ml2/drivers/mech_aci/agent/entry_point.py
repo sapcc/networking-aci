@@ -20,6 +20,7 @@ from neutron.common import config as common_config
 from neutron.conf.agent import common as config
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_service import eventlet_backdoor
 
 
 LOG = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ def main():
     register_options()
     common_config.init(sys.argv[1:])
     config.setup_logging()
+    eventlet_backdoor.initialize_if_enabled(cfg.CONF)
     agent = aci_agent.AciNeutronAgent()
 
     # Start everything.
