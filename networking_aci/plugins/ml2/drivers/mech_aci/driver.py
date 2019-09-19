@@ -74,7 +74,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         if switch:
             host = switch
 
-        LOG.info("Using binding host %s", host)
+        LOG.info("Using binding host %s for binding port %s", host, port['id'])
         host_id, host_config = self._host_or_host_group(host)
 
         if not host_config:
@@ -106,11 +106,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                     'segment_index': level
                 }
 
-                LOG.info("****** Next segment to bind")
-                LOG.info(next_segment)
-
+                LOG.info("Next segment to bind for port %s: %s", port['id'], next_segment)
                 self.rpc_notifier.bind_port(port, host_config, segment, next_segment)
-
                 context.continue_binding(segment["id"], [next_segment])
 
                 return True
