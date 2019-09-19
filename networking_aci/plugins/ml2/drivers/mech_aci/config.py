@@ -111,7 +111,7 @@ def create_fixed_bindings_dictionary():
     for network_tag in conf:
         fixed_bindings_dict[network_tag] = {}
         for key, value in conf[network_tag]:
-            if key == 'bindings':
+            if key in ('bindings', 'physical_domain'):
                 fixed_bindings_dict[network_tag][key] = value[0].split(",")
             else:
                 fixed_bindings_dict[network_tag][key] = value[0]
@@ -136,7 +136,7 @@ def create_hostgroup_dictionary():
     for host in conf:
         host_dict[host] = {}
         for key, value in conf[host]:
-            if key == 'bindings' or key == 'hosts':
+            if key in ('bindings', 'hosts', 'physical_domain'):
                 host_dict[host][key] = value[0].split(",")
             else:
                 host_dict[host][key] = value[0]

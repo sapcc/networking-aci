@@ -106,9 +106,9 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                                            encap=next_segment['segmentation_id'])
 
     @log_helpers.log_method_call
-    def delete_port_postcommit(self, port, host_config, clear_phys_dom):
+    def delete_port_postcommit(self, port, host_config, physdoms_to_clear):
         self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config, encap=1, delete=True,
-                                                           clear_phys_dom=clear_phys_dom)
+                                                           physdoms_to_clear=physdoms_to_clear)
 
     @log_helpers.log_method_call
     def create_network_postcommit(self, network, external):

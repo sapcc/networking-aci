@@ -148,7 +148,7 @@ class CobraManager(object):
             self.apic.commit(tenant)
 
     def ensure_static_bindings_configured(self, network_id, host_config, encap=None,
-                                          delete=False, clear_phys_dom=False):
+                                          delete=False, physdoms_to_clear=[]):
         tenant = self.get_tenant(network_id)
 
         if tenant:
@@ -170,7 +170,8 @@ class CobraManager(object):
             self.apic.commit(ports)
 
             # Associate to Physical Domain
-            self._ensure_physdom(epg, host_config['physical_domain'], (delete and clear_phys_dom))
+            for physdom in host_config['physical_domain']:
+                self._ensure_physdom(epg, physdom, (delete and physdom in physdoms_to_clear))
         else:
             LOG.error("Network {} does not appear to be avilable in ACI, expected in tenant {}"
                       .format(network_id, self.tenant_manager.get_tenant_name(network_id)))
@@ -351,12 +352,12 @@ class CobraManager(object):
             physdoms = []
             fixed_bindings = network.get('fixed_bindings', [])
             for fixed_binding in fixed_bindings:
-                physdoms.append(fixed_binding.get('physical_domain'))
+                physdoms.extend(fixed_binding.get('physical_domain'))
 
             for binding in network.get('bindings', []):
                 host_config = binding.get('host_config', {})
                 if host_config:
-                    physdoms.append(host_config.get('physical_domain'))
+                    physdoms.extend(host_config.get('physical_domain'))
 
             for rsdom in epg.rsdomAtt:
                 physdom = rsdom.tDn[9:]
