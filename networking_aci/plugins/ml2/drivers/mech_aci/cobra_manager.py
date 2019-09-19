@@ -46,12 +46,10 @@ class CobraManager(object):
         self.host_dict = network_config.get('host_dict', {})
         self.address_scope_dict = network_config.get('address_scope_dict', {})
 
-        self.apic = cobra_client.CobraClient(
-                self.aci_config.apic_hosts,
-                self.aci_config.apic_username,
-                self.aci_config.apic_password,
-                self.aci_config.apic_use_ssl,
-        )
+        self.apic = cobra_client.CobraClient(self.aci_config.apic_hosts,
+                                             self.aci_config.apic_username,
+                                             self.aci_config.apic_password,
+                                             self.aci_config.apic_use_ssl)
 
         self.context = context.get_admin_context()
         self.tenant_manager = tenant_manager

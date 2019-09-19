@@ -184,7 +184,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     # End Agent mechanics
 
-    def loop_count_and_wait(self, start_time, ):
+    def loop_count_and_wait(self, start_time):
         # sleep till end of polling interval
         elapsed = time.time() - start_time
         LOG.debug("CI Agent rpc_loop - iteration:%(iter_num)d "
@@ -235,7 +235,6 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                         # Orphaned  - so network ids in ACI but not neutron
                         orphaned = []
-
                         for bd_name in bd_names:
                             if(bd_name not in neutron_network_ids and bd_name not in orphaned):
                                 orphaned.append(bd_name)

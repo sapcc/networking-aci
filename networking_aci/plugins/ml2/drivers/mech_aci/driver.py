@@ -164,7 +164,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                                         last_on_network=last_on_network)
 
     # Port callbacks
-
     def delete_port_postcommit(self, context):
         # For now we look only at the bottom bound segment - works for this use case
         # but will need some review if we ever have several dynamically bound segements

@@ -31,7 +31,7 @@ LOG = log.getLogger(__name__)
 
 RETRY_LIMIT = 2
 FALLBACK_EXCEPTIONS = (rexc.ConnectionError, rexc.Timeout,
-rexc.TooManyRedirects, rexc.InvalidURL)
+                       rexc.TooManyRedirects, rexc.InvalidURL)
 requests.packages.urllib3.disable_warnings()
 
 

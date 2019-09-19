@@ -274,7 +274,6 @@ class AllocationsManager(object):
         segmentation_ids = self._segmentation_ids(host_config)
         alloc_key = self._allocation_key(host, level, segment_type)
         if alloc_key in allocations:
-
             for alloc in allocations[alloc_key]:
                 try:
                     # see if segment is allocatable
