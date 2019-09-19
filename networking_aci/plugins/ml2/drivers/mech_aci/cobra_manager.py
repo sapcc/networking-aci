@@ -299,7 +299,7 @@ class CobraManager(object):
     def get_bd(self, network_id):
         try:
             return self.apic.get_full_tenant(self.get_tenant_name(network_id)).BD[network_id]
-        except:
+        except Exception:
             return None
 
     def get_epg(self, network_id):
@@ -307,7 +307,7 @@ class CobraManager(object):
             app = self.get_app(network_id)
             if app:
                 return app.epg[network_id]
-        except:
+        except Exception:
             return None
 
     def get_app(self, network_id):
