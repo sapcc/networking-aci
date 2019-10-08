@@ -19,6 +19,7 @@ from cobra.model import phys
 from cobra import modelimpl
 import netaddr
 from neutron_lib import context
+from oslo_config import cfg
 from oslo_log import log
 
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_client
@@ -81,15 +82,18 @@ class CobraManager(object):
 
     def ensure_domain_and_epg(self, network_id, external=False):
         tenant = self.get_or_create_tenant(network_id)
+        ep_retention_policy = None
 
         if external:
             unicast_route = 1
             move_detect = 1
             limit_ip_learn_subnets = 1
+            ep_retention_policy = cfg.CONF.ml2_aci.ep_retention_policy_net_external
         else:
             unicast_route = 0
             move_detect = 0
             limit_ip_learn_subnets = 0
+            ep_retention_policy = cfg.CONF.ml2_aci.ep_retention_policy_net_internal
 
         bd_opts = {
             'arpFlood': 1,
@@ -109,9 +113,14 @@ class CobraManager(object):
         # Add EPG to BD domain
         rsbd = fv.RsBd(epg, network_id, tnFvBDName=bd.name)
 
+        bd_objs = [bd]
+        if ep_retention_policy:
+            epret = fv.RsBdToEpRet(bd, tnFvEpRetPolName=ep_retention_policy)
+            bd_objs.append(epret)
+
         # We have to make seperate config requests because cobra can't
         # handle MOs with different root contexts
-        self.apic.commit(bd)
+        self.apic.commit(bd_objs)
         self.apic.commit([app, epg, rsbd])
         self.agent_plugin.tag_network(network_id, "monsoon3::aci::tenant::{}"
                                                   .format(self.tenant_manager.get_tenant_name(network_id)))

@@ -67,6 +67,14 @@ aci_opts = [
     cfg.BoolOpt('sync_allocations',
                 default=True,
                 help="Sync allocations on startup"),
+    cfg.StrOpt('ep_retention_policy_net_internal',
+               default=None,
+               help="Name of the endpoint retention policy to use for internal networks. "
+                    "If unset the attribute is left untouched."),
+    cfg.StrOpt('ep_retention_policy_net_external',
+               default=None,
+               help="Name of the endpoint retention policy to use for external networks. "
+                    "If unset the attribute is left untouched."),
 ]
 
 
