@@ -217,32 +217,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         return clearable
 
-    def _clear_phys_dom(self, network, host_config, level, segment):
-        # TODO check that no other segment on the network is configure
-        # to use the same phys_dom as this segment. If not we can
-        # clear the phys dom on the EPG.
-        LOG.info("Checking if phys dom can be cleared for segment %(segment)s", {"segment": segment})
-        session = db_api.get_reader_session()
-        segments = session.query(segment_model.NetworkSegment).filter_by(network_id=network['id'])
-
-        for other_segment in segments:
-            bindings = session.query(models.PortBindingLevel).filter_by(segment_id=other_segment['id'], level=level)
-
-            for binding in bindings:
-                binding_host_id, binding_host_config = self._host_or_host_group(binding['host'])
-
-                if binding_host_config['physical_domain'] == host_config['physical_domain']:
-                    LOG.info(
-                        "Checked if phys dom can be cleared for segment %(segment)s "
-                        "it is in use in segment %(other_segment)s",
-                        {"segment": segment['id'], "other_segment": other_segment['id']})
-                    return False
-
-        LOG.info("Checked if phys dom can be cleared for segment %(segment)s, its not used can will be cleared",
-                 {"segment": segment['id']})
-
-        return True
-
     def _host_or_host_group(self, host_id):
         return common.get_host_or_host_group(host_id, self.host_group_config)
 
