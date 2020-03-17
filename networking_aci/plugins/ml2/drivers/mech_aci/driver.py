@@ -197,7 +197,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         # select from networksegments where network_id matches, local_segment id does not match
         #   join with ml2_portbinding_levels, filter for level=1
         #       get host
-        with db_api.get_reader_session() as session:
+        session = db_api.get_reader_session()
+        with session.begin():
             other_bindings = (session.query(models.PortBindingLevel.host, models.PortBindingLevel.segment_id)
                                      .join(segment_model.NetworkSegment,
                                            segment_model.NetworkSegment.id == models.PortBindingLevel.segment_id)
