@@ -208,7 +208,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                                      .distinct())
 
         for other_binding in other_bindings:
-            _, other_binding_host_config = self._host_or_host_group(other_binding['host'])
+            _, other_binding_host_config = self._host_or_host_group(other_binding.host)
             for host in clearable:
                 if host in other_binding_host_config['physdoms']:
                     clearable.remove(host)
