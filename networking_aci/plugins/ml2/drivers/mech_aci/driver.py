@@ -189,9 +189,9 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                 clearable_phys_doms = self._get_clearable_phys_doms(context.network.current, segment, host_config)
                 self.rpc_notifier.delete_port(context.current, host_config, clearable_phys_doms)
 
-    def _get_clearable_phys_doms(self, network, local_segment, host_config, level=1):
+    def _get_clearable_phys_doms(self, network, local_segment, host_config):
         # start out with all physdoms in use by the local segment
-        clearable = host_config['physical_domain']
+        clearable = set(host_config['physical_domain'])
 
         # query out all binding_hosts (hosts) that are on any segment in this network that is not local_segment
         # select from networksegments where network_id matches, local_segment id does not match
@@ -203,20 +203,25 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                                      .join(segment_model.NetworkSegment,
                                            segment_model.NetworkSegment.id == models.PortBindingLevel.segment_id)
                                      .filter(segment_model.NetworkSegment.network_id == network['id'],
-                                             models.PortBindingLevel.level == 0,
+                                             models.PortBindingLevel.level == 1,
                                              models.PortBindingLevel.segment_id != local_segment['id'])
                                      .distinct())
 
         for other_binding in other_bindings:
             _, other_binding_host_config = self._host_or_host_group(other_binding.host)
-            for host in clearable:
-                if host in other_binding_host_config['physdoms']:
-                    clearable.remove(host)
+            other_physdoms = set(other_binding_host_config['physical_domain'])
+            for physdom in clearable & other_physdoms:
+                LOG.debug("Not clearing physdom %s from epg %s for segment %s as it is still in use by segment %s",
+                          physdom, network['id'], local_segment['id'], other_binding.segment_id)
+            clearable -= other_physdoms
+
+            if not clearable:
+                break
 
         LOG.debug("Found %d clearable physdoms for network %s segment %s (%s)",
                   len(clearable), network['id'], local_segment['id'], ", ".join(clearable) or "<none>")
 
-        return clearable
+        return list(clearable)
 
     def _host_or_host_group(self, host_id):
         return common.get_host_or_host_group(host_id, self.host_group_config)
