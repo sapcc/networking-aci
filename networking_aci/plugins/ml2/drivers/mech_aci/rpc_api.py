@@ -226,7 +226,7 @@ class ACIRpcClientAPI(object):
 
     def delete_port(self, port, host_config, clearable_phys_doms):
         self._fanout().cast(self.rpc_context, 'delete_port', port=port, host_config=host_config,
-                            clearable_phys_dom=clearable_phys_doms)
+                            clearable_phys_doms=clearable_phys_doms)
 
     def create_network(self, network, external):
         self._fanout().cast(self.rpc_context, 'create_network', network=network, external=external)
