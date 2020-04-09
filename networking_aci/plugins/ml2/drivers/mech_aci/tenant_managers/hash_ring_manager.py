@@ -25,7 +25,7 @@ class HashRingTenantManager(object):
             assert()
 
         self._managed_range = list(range(start, stop + 1))
-        self.ring = hash_ring.HashRing(list(range(self.ring_size)))
+        self.ring = hash_ring.HashRing(nodes=list(range(self.ring_size)), hash_fn='ketama')
 
     @property
     def managed_range(self):
