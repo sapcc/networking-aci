@@ -15,8 +15,8 @@ import time
 
 from neutron_lib import context
 from neutron_lib.exceptions import NetworkNotFound
-from neutron.common import rpc as n_rpc
-from neutron.common import topics
+from neutron_lib import rpc as n_rpc
+from neutron_lib.agent import topics
 from neutron.extensions import tagging
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.services.tag import tag_plugin
@@ -25,7 +25,7 @@ from oslo_log import helpers as log_helpers
 import oslo_messaging
 from sqlalchemy.orm import exc as orm_exc
 
-import driver
+from networking_aci.plugins.ml2.drivers.mech_aci import driver
 from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 
@@ -64,9 +64,9 @@ class AgentRpcCallback(object):
     def get_binding_count(self, rpc_context):
         network_config = common.get_network_config()
         bindings = network_config.get("hostgroup_dict", {})
-        host_groups = bindings.keys()
+        host_groups = list(bindings.keys())
         fixed_bindings = network_config.get("fixed_bindings_dict", {})
-        fixed_binding_networks = fixed_bindings.keys()
+        fixed_binding_networks = list(fixed_bindings.keys())
 
         return len(host_groups) + len(fixed_binding_networks)
 

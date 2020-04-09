@@ -15,11 +15,9 @@
 from neutron_lib import context
 from neutron_lib import exceptions as n_exc
 from neutron_lib.exceptions import address_scope as ext_address_scope
-from neutron.common import exceptions
 from neutron.db import address_scope_db as address_scope
 from neutron.db import db_base_plugin_v2 as db
 from neutron.db import external_net_db as extnet
-from neutron.db import portbindings_db as portbindings
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.services.tag import tag_plugin
 from oslo_log import log as logging
@@ -255,7 +253,7 @@ class ConsistencyCheck(object):
             scope = self.db.get_address_scope(self.context, pool['address_scope_id'])
             if scope:
                 return scope['name']
-        except exceptions.SubnetPoolNotFound:
+        except n_exc.SubnetPoolNotFound:
             pass
         except ext_address_scope.AddressScopeNotFound:
             pass

@@ -260,7 +260,7 @@ class CobraManager(object):
         epg_contracts = []
 
         contract_def = ast.literal_eval(scope_config['contracts'])
-        for contract_type, contracts in contract_def.iteritems():
+        for contract_type, contracts in contract_def.items():
             if contract_type == 'consumed':
                 for contract in contracts:
                     contract = fv.RsCons(epg, contract)
