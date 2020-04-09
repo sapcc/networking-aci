@@ -51,7 +51,7 @@ def get_network_config():
 
 
 def get_host_or_host_group(host_id, host_group_config):
-    for hostgroup, hostgroup_config in host_group_config.iteritems():
+    for hostgroup, hostgroup_config in host_group_config.items():
         if host_id in hostgroup_config['hosts']:
             return hostgroup, hostgroup_config
 

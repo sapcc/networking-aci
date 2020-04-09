@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 from oslo_config import cfg
-
+from networking_aci.utils import multi_config_parser
 DEFAULT_ROOT_HELPER = ('sudo /usr/local/bin/neutron-rootwrap '
                        '/etc/neutron/rootwrap.conf')
 
@@ -94,14 +94,14 @@ CONF = cfg.CONF
 def _get_specific_config(prefix):
     """retrieve config in the format [<label>:<key>]."""
     conf_dict = {}
-    multi_parser = cfg.MultiConfigParser()
+    multi_parser = multi_config_parser.MultiConfigParser()
     multi_parser.read(cfg.CONF.config_file)
     for parsed_file in multi_parser.parsed:
-        for parsed_item in parsed_file.keys():
+        for parsed_item in list(parsed_file.keys()):
             if parsed_item.startswith(prefix):
                 label, key = parsed_item.split(':')
                 if label.lower() == prefix:
-                    conf_dict[key] = parsed_file[parsed_item].items()
+                    conf_dict[key] = list(parsed_file[parsed_item].items())
     return conf_dict
 
 

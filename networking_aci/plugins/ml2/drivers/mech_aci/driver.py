@@ -15,9 +15,9 @@ import ast
 
 from neutron_lib import context
 from neutron_lib.plugins.ml2 import api
-from neutron.db import api as db_api
+from neutron_lib.db import api as db_api
 from neutron.db.models import segment as segment_model
-from neutron.common import rpc as n_rpc
+from neutron_lib import rpc as n_rpc
 from neutron.plugins.ml2 import models
 from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
@@ -26,7 +26,7 @@ from networking_aci._i18n import _LI, _LW
 from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import common
-import rpc_api
+from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
 
 LOG = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         """Start the RPC loop to let the plugin communicate with agents."""
         self._setup_rpc()
         self.topic = aci_constants.ACI_TOPIC
-        self.conn = n_rpc.create_connection()
+        self.conn = n_rpc.Connection()
         self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
 
         return self.conn.consume_in_threads()

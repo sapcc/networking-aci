@@ -14,7 +14,7 @@
 #    under the License.
 import random
 
-from neutron.db import api as db_api
+from neutron_lib.db import api as db_api
 from neutron_lib.db import model_base
 from neutron.db.models import segment as ml2_models
 from neutron.plugins.ml2 import models
@@ -252,12 +252,12 @@ class AllocationsManager(object):
                 allocations[alloc_key].add(alloc)
 
             # process segment ranges for each configured hostgroup
-            for hostgroup, hostgroup_config in self.hostgroup_config.iteritems():
+            for hostgroup, hostgroup_config in self.hostgroup_config.items():
                 self._process_host_or_hostgroup(session, hostgroup, hostgroup_config, allocations, level)
 
         # remove from table unallocated vlans for any unconfigured
         # physical networks
-        for allocs in allocations.values():
+        for allocs in list(allocations.values()):
             for alloc in allocs:
                 if not alloc.network_id:
                     LOG.debug("Removing segment %(seg_id)s on "
