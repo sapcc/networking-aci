@@ -160,7 +160,7 @@ class AgentRpcCallback(object):
         processed_hosts = []
 
         for port in ports:
-            port_binding = port.port_binding
+            port_binding = port.port_bindings[0]
             binding_host = ml2_db.get_port_binding_host(self.context, port['id'])
             config_host = port_binding.get('host')
 
