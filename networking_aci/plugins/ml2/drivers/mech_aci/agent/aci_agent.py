@@ -217,10 +217,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                     else:
                         LOG.warning("Total binding count {}".format(neutron_binding_count))
 
-                        neutron_network_ids = self.agent_rpc.get_network_ids()
-                        neutron_network_count = self.agent_rpc.get_networks_count()
                         bds = self.aci_manager.get_all_bridge_domains()
                         epgs = self.aci_manager.get_all_epgs()
+                        neutron_network_ids = self.agent_rpc.get_network_ids()
+                        neutron_network_count = self.agent_rpc.get_networks_count()
 
                         LOG.info("Currently managing {} neutron networks and {} Bridge domains and {} EPGS"
                                  .format(neutron_network_count, len(bds), len(epgs)))
