@@ -92,13 +92,7 @@ class AgentRpcCallback(object):
 
     @log_helpers.log_method_call
     def get_network_ids(self, rpc_context):
-        networks = self.db.get_networks(self.context, fields=['id'])
-
-        result = []
-        for network in networks:
-            result.append(network.get('id'))
-
-        return result
+        return self.db.get_network_ids(self.context)
 
     @log_helpers.log_method_call
     def get_networks_count(self, rpc_context):

@@ -41,6 +41,14 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
             return bind_ports
 
+    def get_network_ids(self, context):
+        result = []
+        query = context.session.query(models_v2.Network.id).order_by(models_v2.Network.id)
+        for network in query:
+            result.append(network.id)
+
+        return result
+
 
 def get_network_config():
     return {
