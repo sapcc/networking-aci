@@ -55,8 +55,8 @@ class ACIRpcAPI(object):
 
 class AgentRpcCallback(object):
 
-    def __init__(self):
-        self.db = common.DBPlugin()
+    def __init__(self, db):
+        self.db = db
         self.context = context.get_admin_context()
         self.tag_plugin = tag_plugin.TagPlugin()
 
@@ -141,7 +141,7 @@ class AgentRpcCallback(object):
             address_scope_name = None
 
             if pool_id:
-                address_scope_name = common.get_address_scope_name(self.context, pool_id)
+                address_scope_name = self.db.get_address_scope_name(self.context, pool_id)
             result['subnets'].append({
                 'id': subnet.get('id'),
                 'network_id': network_id,

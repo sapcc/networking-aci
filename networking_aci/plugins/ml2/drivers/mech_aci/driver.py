@@ -40,6 +40,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.host_group_config = self.network_config['hostgroup_dict']
         self.allocations_manager = allocations.AllocationsManager(self.network_config)
 
+        self.db = common.DBPlugin()
         self.context = context.get_admin_context_without_session()
         self.rpc_notifier = rpc_api.ACIRpcClientAPI(self.context)
         self.start_rpc_listeners()
@@ -50,7 +51,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
     def _setup_rpc(self):
         """Initialize components to support agent communication."""
         self.endpoints = [
-            rpc_api.AgentRpcCallback(),
+            rpc_api.AgentRpcCallback(self.db),
         ]
 
     @log_helpers.log_method_call
@@ -134,7 +135,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                              .format(context.current['id'])))
                 return
 
-            address_scope_name = common.get_address_scope_name(context._plugin_context, subnetpool_id)
+            address_scope_name = self.db.get_address_scope_name(context._plugin_context, subnetpool_id)
             if address_scope_name is None:
                 # TODO Set network to Down
                 LOG.warn(_LW("Subnet {} is attached to an external network but in an address scope, "
@@ -153,7 +154,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                          .format(context.current['id'])))
             return
 
-        address_scope_name = common.get_address_scope_name(context._plugin_context, subnetpool_id)
+        address_scope_name = self.db.get_address_scope_name(context._plugin_context, subnetpool_id)
         external = self._subnet_external(context)
         subnets = context._plugin.get_subnets_by_network(context._plugin_context, network_id)
         last_on_network = len(subnets) == 0
