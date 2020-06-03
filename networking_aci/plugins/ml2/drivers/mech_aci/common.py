@@ -49,6 +49,28 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return result
 
+    def get_address_scope_name(self, context, subnet_pool_id):
+        pool = self.get_subnetpool(context, subnet_pool_id)
+
+        if not pool:
+            LOG.warn("Subnet pool {} does not exist".format(subnet_pool_id))
+            return
+
+        try:
+            scope = self.get_address_scope(context, pool['address_scope_id'])
+        except ext_address_scope.AddressScopeNotFound:
+            LOG.warn("Address scope {} does could not be found, check ACI config for correct configuration"
+                     .format(['pool.address_scope_id']))
+            return
+
+        # This may not be needed no address scope not found is caught
+        if not scope:
+            LOG.warn("Address scope {} does not exist, check ACI config for correct configuration"
+                     .format(['pool.address_scope_id']))
+            return
+
+        return scope.get('name')
+
 
 def get_network_config():
     return {
@@ -64,30 +86,6 @@ def get_host_or_host_group(host_id, host_group_config):
             return hostgroup, hostgroup_config
 
     return host_id, None
-
-
-def get_address_scope_name(context, subnet_pool_id):
-    plugin = DBPlugin()
-    pool = plugin.get_subnetpool(context, subnet_pool_id)
-
-    if not pool:
-        LOG.warn("Subnet pool {} does not exist".format(subnet_pool_id))
-        return
-
-    try:
-        scope = plugin.get_address_scope(context, pool['address_scope_id'])
-    except ext_address_scope.AddressScopeNotFound:
-        LOG.warn("Address scope {} does could not be found, check ACI config for correct configuration"
-                 .format(['pool.address_scope_id']))
-        return
-
-    # This may not be needed no address scope not found is caught
-    if not scope:
-        LOG.warn("Address scope {} does not exist, check ACI config for correct configuration"
-                 .format(['pool.address_scope_id']))
-        return
-
-    return scope.get('name')
 
 
 def get_segments(context, network_id):
