@@ -19,7 +19,7 @@ from cobra.mit.access import MoDirectory
 from cobra.mit.request import CommitError
 from cobra.mit.request import ConfigRequest
 from cobra.mit.request import DnQuery
-from cobra.mit.session import LoginSession
+from cobra.mit.session import LoginSession, LoginError
 from cobra.mit.request import QueryError
 from cobra.model.fv import Tenant
 from oslo_log import log
@@ -31,7 +31,8 @@ LOG = log.getLogger(__name__)
 
 RETRY_LIMIT = 2
 FALLBACK_EXCEPTIONS = (rexc.ConnectionError, rexc.Timeout,
-                       rexc.TooManyRedirects, rexc.InvalidURL)
+                       rexc.TooManyRedirects, rexc.InvalidURL,
+                       rexc.HTTPError, LoginError)
 requests.packages.urllib3.disable_warnings()
 
 
