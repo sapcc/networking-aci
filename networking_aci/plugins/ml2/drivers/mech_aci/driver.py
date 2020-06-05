@@ -210,6 +210,10 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         for other_binding in other_bindings:
             _, other_binding_host_config = self._host_or_host_group(other_binding.host)
+            if not other_binding_host_config:
+                LOG.warning("No config available / invalid binding host %s, segment %s with profile %s in network %s",
+                            other_binding.host, other_binding.segment_id, other_binding.profile, network['id'])
+                continue
             other_physdoms = set(other_binding_host_config['physical_domain'])
             for physdom in clearable & other_physdoms:
                 LOG.debug("Not clearing physdom %s from epg %s for segment %s as it is still in use by segment %s",
