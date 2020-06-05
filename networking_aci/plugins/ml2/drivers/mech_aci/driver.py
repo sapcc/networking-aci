@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 import ast
+import json
 
 from neutron_lib import context
 from neutron_lib.plugins.ml2 import api
@@ -200,19 +201,36 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         #       get host
         session = db_api.get_reader_session()
         with session.begin():
-            other_bindings = (session.query(models.PortBindingLevel.host, models.PortBindingLevel.segment_id)
+            other_bindings = (session.query(models.PortBindingLevel.host, models.PortBindingLevel.segment_id,
+                                            models.PortBinding.profile)
                                      .join(segment_model.NetworkSegment,
                                            segment_model.NetworkSegment.id == models.PortBindingLevel.segment_id)
+                                     .join(models.PortBinding,
+                                           models.PortBindingLevel.port_id == models.PortBinding.port_id)
                                      .filter(segment_model.NetworkSegment.network_id == network['id'],
                                              models.PortBindingLevel.level == 1,
                                              models.PortBindingLevel.segment_id != local_segment['id'])
                                      .distinct())
 
         for other_binding in other_bindings:
-            _, other_binding_host_config = self._host_or_host_group(other_binding.host)
+            host = other_binding.host
+
+            # try to get alternate host from binding profile
+            binding_profile = None
+            try:
+                binding_profile = json.loads(other_binding.profile)
+                if binding_profile:
+                    switch = CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
+                    if switch:
+                        host = switch
+            except json.decoder.JSONDecodeError:
+                # don't act on broken binding profile
+                pass
+
+            _, other_binding_host_config = self._host_or_host_group(host)
             if not other_binding_host_config:
-                LOG.warning("No config available / invalid binding host %s, segment %s with profile %s in network %s",
-                            other_binding.host, other_binding.segment_id, other_binding.profile, network['id'])
+                LOG.warning("No config available / invalid binding host %s for segment %s in network %s",
+                            host, other_binding.segment_id, network['id'])
                 continue
             other_physdoms = set(other_binding_host_config['physical_domain'])
             for physdom in clearable & other_physdoms:
