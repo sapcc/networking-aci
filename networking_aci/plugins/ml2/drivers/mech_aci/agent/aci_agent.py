@@ -103,7 +103,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
     @log_helpers.log_method_call
     def bind_port_postcommit(self, port, host_config, segment, next_segment):
         self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config,
-                                                           encap=next_segment['segmentation_id'])
+                                                           encap=next_segment.get('segmentation_id'))
 
     @log_helpers.log_method_call
     def delete_port_postcommit(self, port, host_config, physdoms_to_clear):

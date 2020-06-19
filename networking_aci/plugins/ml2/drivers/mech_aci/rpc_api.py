@@ -33,6 +33,7 @@ LOG = logging.getLogger(__name__)
 
 
 class ACIRpcAPI(object):
+    """RPC API Callback implementation (inside aci-agent)"""
     def bind_port(self, rpc_context, port, host_config, segment, next_segment):
         self.bind_port_postcommit(port, host_config, segment, next_segment)
 
@@ -54,7 +55,7 @@ class ACIRpcAPI(object):
 
 
 class AgentRpcCallback(object):
-
+    """Agent RPC Callback implementation (inside neutron-server)"""
     def __init__(self, db):
         self.db = db
         self.context = context.get_admin_context()
@@ -169,20 +170,29 @@ class AgentRpcCallback(object):
                 host_id, host_config = common.get_host_or_host_group(config_host, host_group_config)
 
                 if binding_levels:
-                    # for now we use binding level one
-                    for binding in binding_levels:
-                        if binding.level == 1:
-                            # Store one binding for each binding host
-                            segment = segment_dict.get(binding.segment_id)
-                            if segment:
-                                result['bindings'].append({
-                                    'binding:host_id': binding_host,
-                                    'host_config': host_config,
-                                    'encap': segment.get('segmentation_id'),
-                                    'network_type': segment.get('network_type'),
-                                    'physical_network': segment.get('physical_network')
-                                })
-                                processed_hosts.append(binding_host)
+                    binding = None
+                    if len(binding_levels) == 1 and binding_levels[0].driver == aci_constants.ACI_DRIVER_NAME:
+                        # single binding level, see if it is a port directly attached to aci with a bm hostgroup
+                        if host_config and host_config['bm_mode']:
+                            binding = binding_levels[0]
+                    else:
+                        for binding_level in binding_levels:
+                            if binding_level.level == 1:
+                                binding = binding_level
+                                break
+
+                    if binding:
+                        # Store one binding for each binding host
+                        segment = segment_dict.get(binding.segment_id)
+                        if segment:
+                            result['bindings'].append({
+                                'binding:host_id': binding_host,
+                                'host_config': host_config,
+                                'encap': segment.get('segmentation_id'),
+                                'network_type': segment.get('network_type'),
+                                'physical_network': segment.get('physical_network')
+                            })
+                            processed_hosts.append(binding_host)
 
         LOG.info("get network %s :  %s seconds", network_id, (time.time() - start))
         return result
@@ -201,6 +211,7 @@ class AgentRpcCallback(object):
 
 
 class ACIRpcClientAPI(object):
+    """Mechanism driver RPC Client API (neutron-server --> aci-agent)"""
     version = '1.0'
 
     def __init__(self, rpc_context):
@@ -238,6 +249,7 @@ class ACIRpcClientAPI(object):
 
 
 class AgentRpcClientAPI(object):
+    """Agent RPC Client API (aci-agent --> neutron-server)"""
     version = '1.0'
 
     def __init__(self, rpc_context):
