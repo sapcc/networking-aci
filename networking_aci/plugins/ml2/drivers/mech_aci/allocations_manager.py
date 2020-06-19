@@ -270,6 +270,10 @@ class AllocationsManager(object):
                     session.delete(alloc)
 
     def _process_host_or_hostgroup(self, session, host, host_config, allocations, level):
+        if host_config["bm_mode"]:
+            # we don't need to handle allocations for hostgroups in baremetal mode
+            return
+
         segment_type = host_config['segment_type']
         segmentation_ids = self._segmentation_ids(host_config)
         alloc_key = self._allocation_key(host, level, segment_type)

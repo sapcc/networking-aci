@@ -24,6 +24,7 @@ from neutron.plugins.ml2 import models as ml2_models
 from oslo_log import log as logging
 
 from networking_aci.plugins.ml2.drivers.mech_aci import config
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -72,6 +73,22 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             return
 
         return scope.get('name')
+
+    def get_bm_hosts_on_segment(self, context, segment_id):
+        hosts = set()
+        query = (context.session.query(ml2_models.PortBinding.host, ml2_models.PortBinding.profile)
+                                .join(ml2_models.PortBindingLevel,
+                                      ml2_models.PortBindingLevel.port_id == ml2_models.PortBinding.port_id)
+                                .filter(ml2_models.PortBinding.vif_type == aci_constants.VIF_TYPE_ACI)
+                                .filter(ml2_models.PortBindingLevel.segment_id == segment_id))
+        for port in query:
+            host = port.host
+            switch = get_switch_from_local_link(port.profile)
+            if switch:
+                host = switch
+            hosts.add(host)
+
+        return hosts
 
 
 def get_network_config():

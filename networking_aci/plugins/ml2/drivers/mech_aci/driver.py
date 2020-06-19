@@ -14,6 +14,7 @@
 import json
 
 from neutron_lib import context
+from neutron_lib import constants as n_const
 from neutron_lib.plugins.ml2 import api
 from neutron.db import api as db_api
 from neutron.db.models import segment as segment_model
@@ -41,8 +42,9 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.allocations_manager = allocations.AllocationsManager(self.network_config)
 
         self.db = common.DBPlugin()
-        self.context = context.get_admin_context_without_session()
-        self.rpc_notifier = rpc_api.ACIRpcClientAPI(self.context)
+        self.rpc_context = context.get_admin_context_without_session()
+        self.context = context.get_admin_context()
+        self.rpc_notifier = rpc_api.ACIRpcClientAPI(self.rpc_context)
         self.start_rpc_listeners()
 
     def initialize(self):
@@ -66,8 +68,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
     def bind_port(self, context):
         port = context.current
-        network = context.network.current
-        network_id = network['id']
         host = context.host
         binding_profile = context.current.get('binding:profile')
         switch = common.get_switch_from_local_link(binding_profile)
@@ -81,37 +81,66 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         if not host_config:
             return False
 
+        if context.binding_levels is not None:
+            # hierarchical port bind already in progress
+            return
+
+        if len(context.segments_to_bind) < 1:
+            # no segment available
+            return
+
+        if host_config['bm_mode']:
+            # host directly connected to aci
+            return self._bind_port_direct(context, port, host_id, host_config)
+        else:
+            return self._bind_port_hierarchical(context, port, host_id, host_config)
+
+    def _bind_port_direct(self, context, port, host_id, host_config):
+        for segment in context.segments_to_bind:
+            if segment[api.PHYSICAL_NETWORK] is None:
+                vif_details = {
+                    'aci_directly_bound': True,
+                }
+                self.rpc_notifier.bind_port(port, host_config, segment, {})
+                LOG.info("Directly bound port %s to hostgroup %s with segment %s", port['id'], host_id, segment['id'])
+                context.set_binding(segment['id'], aci_constants.ACI_DRIVER_NAME, vif_details, n_const.ACTIVE)
+
+                return True
+
+    def _bind_port_hierarchical(self, context, port, host_id, host_config):
+        network = context.network.current
+        network_id = network['id']
         segment_type = host_config.get('segment_type', 'vlan')
         segment_physnet = host_config.get('physical_network', None)
 
-        for segment in context.segments_to_bind:
-            if context.binding_levels is None:
-                # For now we assume only two levels in hierarchy. The top level VXLAN/VLAN and
-                # one dynamically allocated segment at level 1
-                level = 1
-                allocation = self.allocations_manager.allocate_segment(network, host_id, level, host_config)
+        segment = context.segments_to_bind[0]
 
-                if not allocation:
-                    LOG.error("Binding failed, could not allocate a segment for further binding levels "
-                              "for port %(port)s",
-                              {'port': context.current['id']})
-                    return False
+        # For now we assume only two levels in hierarchy. The top level VXLAN/VLAN and
+        # one dynamically allocated segment at level 1
+        level = 1
+        allocation = self.allocations_manager.allocate_segment(network, host_id, level, host_config)
 
-                next_segment = {
-                    'segmentation_id': allocation.segmentation_id,
-                    'network_id': network_id,
-                    'network_type': segment_type,
-                    'physical_network': segment_physnet,
-                    'id': allocation.segment_id,
-                    'is_dynamic': False,
-                    'segment_index': level
-                }
+        if not allocation:
+            LOG.error("Binding failed, could not allocate a segment for further binding levels "
+                      "for port %(port)s",
+                      {'port': context.current['id']})
+            return False
 
-                LOG.info("Next segment to bind for port %s: %s", port['id'], next_segment)
-                self.rpc_notifier.bind_port(port, host_config, segment, next_segment)
-                context.continue_binding(segment["id"], [next_segment])
+        next_segment = {
+            'segmentation_id': allocation.segmentation_id,
+            'network_id': network_id,
+            'network_type': segment_type,
+            'physical_network': segment_physnet,
+            'id': allocation.segment_id,
+            'is_dynamic': False,
+            'segment_index': level
+        }
 
-                return True
+        LOG.info("Next segment to bind for port %s: %s", port['id'], next_segment)
+        self.rpc_notifier.bind_port(port, host_config, segment, next_segment)
+        context.continue_binding(segment["id"], [next_segment])
+
+        return True
 
     # Network callbacks
     def create_network_postcommit(self, context):
@@ -178,13 +207,26 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         if not host_config:
             return False
 
-        if segment:
+        if context.binding_levels and segment:
             # Get segment from ml2_port_binding_levels based on segment_id and host
             # if no ports on this segment for host we can remove the aci allocation
-            released = self.allocations_manager.release_segment(context.network.current, host_config, 1, segment)
+            if host_config['bm_mode'] and len(context.binding_levels) == 1 and \
+                    context.binding_levels[0][api.BOUND_DRIVER] == aci_constants.ACI_DRIVER_NAME:
+                level = 0
+            else:
+                level = 1
+            released = self.allocations_manager.release_segment(context.network.current, host_config, level, segment)
+
+            if host_config['bm_mode'] and not released:
+                # check if we need to disconnect this bm host
+                for other_host in self.db.get_bm_hosts_on_segment(self.context, segment['id']):
+                    if other_host in host_config['hosts']:
+                        break
+                else:
+                    released = True
 
             # Call to ACI to delete port if the segment is released i.e.
-            # port is the last for the network one on the host
+            # port is the last for the network one on the host or if the port is directly bound by aci
             if released:
                 # Check if physical domain should be cleared
                 clearable_phys_doms = self._get_clearable_phys_doms(context.network.current, segment, host_config)
@@ -222,7 +264,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                     switch = common.get_switch_from_local_link(binding_profile)
                     if switch:
                         host = switch
-            except json.decoder.JSONDecodeError:
+            # except json.decoder.JSONDecodeError:  # for python3
+            except ValueError:
                 # don't act on broken binding profile
                 pass
 

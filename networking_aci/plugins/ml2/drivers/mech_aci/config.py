@@ -75,6 +75,31 @@ aci_opts = [
                default=None,
                help="Name of the endpoint retention policy to use for external networks. "
                     "If unset the attribute is left untouched."),
+
+    cfg.StrOpt('resource_prefix',
+               default='openstack',
+               help="Prefix baremetal resources (and others in the future) with this prefix"),
+    cfg.StrOpt('default_aep',
+               default=None,
+               help="Default AEP, if none is defined in hostgroup"),
+    cfg.StrOpt('default_lacp_policy',
+               default=None,
+               help="Default LACP policy to use. Set to empty string to clear it."),
+    cfg.StrOpt('baremetal_lacp_policy',
+               default=None,
+               help="Baremetal LACP policy to use. Set to empty string to clear it."),
+    cfg.StrOpt('default_mcp_policy',
+               default=None,
+               help="Default MCP policy to use. Set to empty string to clear it."),
+    cfg.StrOpt('baremetal_mcp_policy',
+               default=None,
+               help="Baremetal MCP policy to use. Set to empty string to clear it."),
+    cfg.StrOpt('default_l2iface_policy',
+               default=None,
+               help="Default L2 interface policy to use. Set to empty string to clear it."),
+    cfg.StrOpt('baremetal_l2iface_policy',
+               default=None,
+               help="Baremetal L2 interface policy to use. Set to empty string to clear it."),
 ]
 
 
@@ -109,7 +134,9 @@ def create_fixed_bindings_dictionary():
     fixed_bindings_dict = {}
     conf = _get_specific_config('fixed-binding')
     for network_tag in conf:
-        fixed_bindings_dict[network_tag] = {}
+        fixed_bindings_dict[network_tag] = {
+            'bm_mode': False,
+        }
         for key, value in conf[network_tag]:
             if key in ('bindings', 'physical_domain'):
                 fixed_bindings_dict[network_tag][key] = value[0].split(",")
@@ -134,11 +161,23 @@ def create_hostgroup_dictionary():
     host_dict = {}
     conf = _get_specific_config('aci-hostgroup')
     for host in conf:
-        host_dict[host] = {}
+        d = {
+            'bm_mode': False,
+        }
         for key, value in conf[host]:
             if key in ('bindings', 'hosts', 'physical_domain'):
-                host_dict[host][key] = value[0].split(",")
+                d[key] = value[0].split(",")
+            elif key in ('bm_mode',):
+                d[key] = value[0].lower() in ('yes', 'true')
             else:
-                host_dict[host][key] = value[0]
+                d[key] = value[0]
+
+        if d['bm_mode']:
+            resource_name = "{}-{}".format(CONF.ml2_aci.resource_prefix, host)
+            # override physdom with generated name
+            d['physical_domain'] = [resource_name]
+            d['resource_name'] = resource_name
+
+        host_dict[host] = d
 
     return host_dict
