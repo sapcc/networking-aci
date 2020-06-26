@@ -11,6 +11,8 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import ast
+
 from neutron_lib.exceptions import address_scope as ext_address_scope
 from neutron.db import address_scope_db
 from neutron.db import db_base_plugin_v2
@@ -90,3 +92,26 @@ def get_host_or_host_group(host_id, host_group_config):
 
 def get_segments(context, network_id):
     return ml2_db.get_network_segments(context, network_id)
+
+
+def get_switch_from_local_link(binding_profile):
+    if binding_profile:
+        try:
+            if not isinstance(binding_profile, dict):
+                binding_profile = ast.literal_eval(binding_profile)
+
+            lli = binding_profile.get('local_link_information')
+            # TODO validate assumption that we have 1 lli in list.
+            if lli and lli[0] and isinstance(lli[0], dict):
+                switch = lli[0].get('switch_info', None) or lli[0].get('switch_id', None)
+                if switch:
+                    LOG.info("Using link local information for binding host %s", switch)
+                    return switch
+                else:
+                    LOG.error("Cannot determine switch for local link info %s in binding profile %s.",
+                              lli[0], binding_profile)
+            else:
+                LOG.error("Local information %s is invalid in binding profile %s.",
+                          lli, binding_profile)
+        except ValueError:
+            LOG.info("binding Profile %s cannot be parsed", binding_profile)
