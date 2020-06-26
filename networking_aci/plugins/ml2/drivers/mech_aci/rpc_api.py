@@ -161,7 +161,7 @@ class AgentRpcCallback(object):
             if binding_host not in processed_hosts:
                 binding_profile = port_binding.get('profile')
                 if binding_profile:
-                    switch = driver.CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
+                    switch = driver.common.get_switch_from_local_link(binding_profile)
                     if switch:
                         config_host = switch
 
