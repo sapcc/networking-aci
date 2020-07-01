@@ -27,6 +27,7 @@ from networking_aci._i18n import _LI, _LW
 from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import common
+from networking_aci.plugins.ml2.drivers.mech_aci.trunk import ACITrunkDriver
 import rpc_api
 
 LOG = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.context = context.get_admin_context()
         self.rpc_notifier = rpc_api.ACIRpcClientAPI(self.rpc_context)
         self.start_rpc_listeners()
+        self.trunk_driver = ACITrunkDriver.create()
 
     def initialize(self):
         pass
@@ -72,6 +74,9 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         binding_profile = context.current.get('binding:profile')
         switch = common.get_switch_from_local_link(binding_profile)
 
+        if port.get("trunk_details"):
+            LOG.info("Port %s has trunk details %s", port['id'], port.get("trunk_details"))
+
         if switch:
             host = switch
 
@@ -96,14 +101,25 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             return self._bind_port_hierarchical(context, port, host_id, host_config)
 
     def _bind_port_direct(self, context, port, host_id, host_config):
+        binding_profile = common.get_binding_profile(port.get('binding:profile'))
+
         for segment in context.segments_to_bind:
             if segment[api.PHYSICAL_NETWORK] is None:
                 vif_details = {
                     'aci_directly_bound': True,
                 }
-                self.rpc_notifier.bind_port(port, host_config, segment, {})
-                LOG.info("Directly bound port %s to hostgroup %s with segment %s", port['id'], host_id, segment['id'])
+                next_segment = {}
+                extra_info = ""
+                if 'aci_trunk' in binding_profile:
+                    next_segment['segment_id'] = binding_profile['aci_trunk'].get('segmentation_id')
+                    extra_info = "(trunk vlan %d)".format(next_segment['segment_id'])
+                else:
+                    extra_info = "(access port)"
+
+                self.rpc_notifier.bind_port(port, host_config, segment, next_segment)
                 context.set_binding(segment['id'], aci_constants.ACI_DRIVER_NAME, vif_details, n_const.ACTIVE)
+                LOG.info("Directly bound port %s to hostgroup %s with segment %s %s",
+                         port['id'], host_id, segment['id'], extra_info)
 
                 return True
 

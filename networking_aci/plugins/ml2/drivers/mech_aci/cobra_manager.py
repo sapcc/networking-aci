@@ -157,12 +157,15 @@ class CobraManager(object):
 
             if bm_mode:
                 segment_type = 'vlan'
-                encap = 1
+                if encap is not None:
+                    encap_mode = "regular"  # == trunk
+                else:
+                    encap_mode = "untagged"
+                    encap = 1
                 aep_name = host_config['resource_name']
                 lacppol_name = cfg.CONF.ml2_aci.baremetal_lacp_policy
                 mcpifpol_name = cfg.CONF.ml2_aci.baremetal_mcp_policy
                 l2ifpol_name = cfg.CONF.ml2_aci.baremetal_l2iface_policy
-                encap_mode = "untagged"
                 if not delete:
                     self._ensure_bm_aci_entities(host_config['resource_name'])
             else:
@@ -201,7 +204,7 @@ class CobraManager(object):
 
                 # add interface to epg
                 pdn = self.get_pdn(binding)
-                LOG.info("Preparing static binding %s encap %s for network %s", pdn, encap, network_id)
+                LOG.debug("Preparing static binding %s encap %s for network %s", pdn, encap, network_id)
                 port = fv.RsPathAtt(epg, pdn, encap=encap, mode=encap_mode)
                 if delete:
                     port.delete()

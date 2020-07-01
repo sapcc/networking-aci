@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 import ast
+import json
 
 from neutron_lib.exceptions import address_scope as ext_address_scope
 from neutron.db import address_scope_db
@@ -132,3 +133,15 @@ def get_switch_from_local_link(binding_profile):
                           lli, binding_profile)
         except ValueError:
             LOG.info("binding Profile %s cannot be parsed", binding_profile)
+
+
+def get_binding_profile(binding_profile):
+    if not binding_profile:
+        return {}
+
+    if not isinstance(binding_profile, dict):
+        try:
+            return json.loads(binding_profile)
+        except ValueError as e:
+            LOG.warning("Could not load binding profile %s: %s", binding_profile, e)
+            return {}
