@@ -260,32 +260,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                         for network in neutron_networks:
                             try:
-                                self.aci_manager.clean_subnets(network)
-                                self.aci_manager.clean_physdoms(network)
-                                self.aci_manager.clean_bindings(network)
-
-                                self.aci_manager.ensure_domain_and_epg(network.get('id'),
-                                                                       external=network.get('router:external'))
-
-                                for subnet in network.get('subnets'):
-                                    self.aci_manager.create_subnet(subnet,
-                                                                   network.get('router:external'),
-                                                                   subnet.get('address_scope_name'))
-
-                                for binding in network.get('bindings'):
-                                    if binding.get('host_config'):
-                                        self.aci_manager.ensure_static_bindings_configured(network.get('id'),
-                                                                                           binding.get('host_config'),
-                                                                                           encap=binding.get('encap'))
-                                    else:
-                                        LOG.warning("No host configuration found in binding %s", binding)
-
-                                fixed_bindings = network.get('fixed_bindings')
-
-                                for fixed_binding in fixed_bindings:
-                                    encap = fixed_binding.get('segment_id', None)
-                                    self.aci_manager.ensure_static_bindings_configured(network.get('id'), fixed_binding,
-                                                                       encap=encap)
+                                self.cobra_manager.sync_network(network)
                             except Exception:
                                 LOG.exception("Error while attempting to apply configuration to network %s",
                                               network.get('id'))

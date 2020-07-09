@@ -74,6 +74,27 @@ class CobraManager(object):
 
         return pdn
 
+    def sync_network(self, network):
+        self.aci_manager.clean_subnets(network)
+        self.aci_manager.clean_physdoms(network)
+        self.aci_manager.clean_bindings(network)
+        self.aci_manager.ensure_domain_and_epg(network.get('id'), external=network.get('router:external'))
+
+        for subnet in network.get('subnets'):
+            self.aci_manager.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
+
+        for binding in network.get('bindings'):
+            if binding.get('host_config'):
+                self.aci_manager.ensure_static_bindings_configured(network.get('id'),
+                                                                   binding.get('host_config'),
+                                                                   encap=binding.get('encap'))
+            else:
+                LOG.warning("No host configuration found in binding %s", binding)
+
+        for fixed_binding in network.get('fixed_bindings'):
+            encap = fixed_binding.get('segment_id', None)
+            self.aci_manager.ensure_static_bindings_configured(network.get('id'), fixed_binding, encap=encap)
+
     def get_static_binding_encap(self, segment_type, encap):
         if segment_type == 'vlan':
             encap = ENCAP_VLAN % str(encap)
