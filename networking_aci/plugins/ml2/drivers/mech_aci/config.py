@@ -100,6 +100,10 @@ aci_opts = [
     cfg.StrOpt('baremetal_l2iface_policy',
                default=None,
                help="Baremetal L2 interface policy to use. Set to empty string to clear it."),
+    cfg.StrOpt('handle_port_update_for_non_baremetal',
+               default=False,
+               help="Port updates (e.g. binding host removed/changed) are only handled for trunk ports. "
+                    "This can be enabled for all ports, but this might have unforseen sideeffects (untested)."),
 ]
 
 

@@ -20,6 +20,7 @@ from neutron.common import topics
 from neutron.extensions import tagging
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.services.tag import tag_plugin
+from neutron.services.trunk import constants as trunk_const
 from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
 import oslo_messaging
@@ -154,47 +155,66 @@ class AgentRpcCallback(object):
         ports = self.db.get_ports_with_binding(self.context, network_id)
         processed_hosts = []
 
+        bindings = {}
         for port in ports:
             port_binding = port.port_binding
             binding_host = ml2_db.get_port_binding_host(self.context, port['id'])
             config_host = port_binding.get('host')
+            binding_profile = common.get_binding_profile(port_binding.get('profile'))
+            if binding_profile:
+                switch = driver.common.get_switch_from_local_link(binding_profile)
+                if switch:
+                    config_host = switch
 
-            if binding_host not in processed_hosts:
-                binding_profile = port_binding.get('profile')
-                if binding_profile:
-                    switch = driver.common.get_switch_from_local_link(binding_profile)
-                    if switch:
-                        config_host = switch
-
-                binding_levels = ml2_db.get_binding_levels(self.context, port['id'], binding_host)
+            if config_host not in processed_hosts:
                 host_id, host_config = common.get_host_or_host_group(config_host, host_group_config)
+                if host_id not in bindings and host_config:
+                    binding_levels = ml2_db.get_binding_levels(self.context, port['id'], binding_host)
 
-                if binding_levels:
-                    binding = None
-                    if len(binding_levels) == 1 and binding_levels[0].driver == aci_constants.ACI_DRIVER_NAME:
-                        # single binding level, see if it is a port directly attached to aci with a bm hostgroup
-                        if host_config and host_config['bm_mode']:
-                            binding = binding_levels[0]
-                    else:
-                        for binding_level in binding_levels:
-                            if binding_level.level == 1:
-                                binding = binding_level
-                                break
+                    if binding_levels:
+                        binding = None
+                        if len(binding_levels) == 1 and binding_levels[0].driver == aci_constants.ACI_DRIVER_NAME:
+                            # single binding level, see if it is a port directly attached to aci with a bm hostgroup
+                            if host_config['bm_mode']:
+                                binding = binding_levels[0]
+                                network_type = 'vlan'
+                                physical_network = None
+                                if port.get('device_owner') == trunk_const.TRUNK_SUBPORT_OWNER:
+                                    # this is a trunk port
+                                    encap = binding_profile.get('aci_trunk', {}).get('segmentation_id')
+                                    if encap is None:
+                                        LOG.error("Found port %s as trunk subport but without an encap - "
+                                                  "this is very uncommon",
+                                                  port['id'])
+                                else:
+                                    # this is an access port (trunk vlans will be handled after adding this binding)
+                                    encap = None
+                        else:
+                            for binding_level in binding_levels:
+                                if binding_level.level == 1:
+                                    segment = segment_dict.get(binding_level.segment_id)
+                                    if segment:
+                                        binding = binding_level
+                                        encap = segment.get('segmentation_id')
+                                        network_type = segment.get('network_type')
+                                        physical_network = segment.get('physical_network')
+                                        break
 
-                    if binding:
-                        # Store one binding for each binding host
-                        segment = segment_dict.get(binding.segment_id)
-                        if segment:
-                            result['bindings'].append({
+                        if binding:
+                            # Store one binding for each binding host
+                            bindings[host_id] = {
                                 'binding:host_id': binding_host,
+                                'host_id': config_host,
                                 'host_config': host_config,
-                                'encap': segment.get('segmentation_id'),
-                                'network_type': segment.get('network_type'),
-                                'physical_network': segment.get('physical_network')
-                            })
+                                'encap': encap,
+                                'network_type': network_type,
+                                'physical_network': physical_network,
+                            }
                             processed_hosts.append(binding_host)
 
-        LOG.info("get network %s :  %s seconds", network_id, (time.time() - start))
+        result['bindings'] = list(bindings.values())
+
+        LOG.info("get network %s: %s seconds", network_id, (time.time() - start))
         return result
 
     @log_helpers.log_method_call

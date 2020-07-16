@@ -75,25 +75,26 @@ class CobraManager(object):
         return pdn
 
     def sync_network(self, network):
-        self.aci_manager.clean_subnets(network)
-        self.aci_manager.clean_physdoms(network)
-        self.aci_manager.clean_bindings(network)
-        self.aci_manager.ensure_domain_and_epg(network.get('id'), external=network.get('router:external'))
+        self.clean_subnets(network)
+        self.clean_physdoms(network)
+        self.clean_bindings(network)
+
+        self.ensure_domain_and_epg(network.get('id'), external=network.get('router:external'))
 
         for subnet in network.get('subnets'):
-            self.aci_manager.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
+            self.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
 
         for binding in network.get('bindings'):
             if binding.get('host_config'):
-                self.aci_manager.ensure_static_bindings_configured(network.get('id'),
-                                                                   binding.get('host_config'),
-                                                                   encap=binding.get('encap'))
+                self.ensure_static_bindings_configured(network.get('id'),
+                                                       binding.get('host_config'),
+                                                       encap=binding.get('encap'))
             else:
                 LOG.warning("No host configuration found in binding %s", binding)
 
         for fixed_binding in network.get('fixed_bindings'):
-            encap = fixed_binding.get('segment_id', None)
-            self.aci_manager.ensure_static_bindings_configured(network.get('id'), fixed_binding, encap=encap)
+            encap = fixed_binding.get('segment_id')
+            self.ensure_static_bindings_configured(network.get('id'), fixed_binding, encap=encap)
 
     def get_static_binding_encap(self, segment_type, encap):
         if segment_type == 'vlan':
@@ -175,13 +176,12 @@ class CobraManager(object):
         if tenant:
             bm_mode = host_config['bm_mode']
             bindings = host_config['bindings']
+            encap_mode = "regular"  # == trunk
 
             if bm_mode:
                 segment_type = 'vlan'
-                if encap is not None:
-                    encap_mode = "regular"  # == trunk
-                else:
-                    encap_mode = "untagged"
+                if encap is None:
+                    encap_mode = "untagged"  # == access
                     encap = 1
                 aep_name = host_config['resource_name']
                 lacppol_name = cfg.CONF.ml2_aci.baremetal_lacp_policy
@@ -197,7 +197,6 @@ class CobraManager(object):
                 lacppol_name = cfg.CONF.ml2_aci.default_lacp_policy
                 mcpifpol_name = cfg.CONF.ml2_aci.default_mcp_policy
                 l2ifpol_name = cfg.CONF.ml2_aci.default_l2iface_policy
-                encap_mode = "regular"  # == trunk
 
             encap = self.get_static_binding_encap(segment_type, encap)
             app = fv.Ap(tenant, self.apic_application_profile)
@@ -458,16 +457,21 @@ class CobraManager(object):
                     neutron_bindings.append({"port": pdn, "encap": encap})
 
             for binding in network.get('bindings', []):
-                encap = self.get_static_binding_encap(binding['network_type'], binding['encap'])
                 host_config = binding['host_config']
                 if host_config:
+                    encap_mode = "regular"
+                    encap = binding['encap']
+                    if host_config['bm_mode'] and encap is None:
+                        encap_mode = "untagged"
+                        encap = 1
+                    encap = self.get_static_binding_encap(binding['network_type'], encap)
+
                     for port_binding in host_config.get('bindings', []):
                         pdn = self.get_pdn(port_binding)
-
-                        neutron_bindings.append({"port": pdn, "encap": encap})
+                        neutron_bindings.append({"port": pdn, "encap": encap, "mode": encap_mode})
 
             for path in epg.rspathAtt:
-                if not {"port": path.tDn, "encap": path.encap} in neutron_bindings:
+                if not {"port": path.tDn, "encap": path.encap, "mode": path.mode} in neutron_bindings:
                     LOG.warning("Cleaning binding %s on EPG %s", {"port": path.tDn, "encap": path.encap}, network_id)
                     path.delete()
                     ports.append(path)
