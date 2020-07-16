@@ -136,12 +136,22 @@ def get_switch_from_local_link(binding_profile):
 
 
 def get_binding_profile(binding_profile):
+    if isinstance(binding_profile, dict):
+        return binding_profile
+
     if not binding_profile:
         return {}
 
-    if not isinstance(binding_profile, dict):
-        try:
-            return json.loads(binding_profile)
-        except ValueError as e:
-            LOG.warning("Could not load binding profile %s: %s", binding_profile, e)
-            return {}
+    try:
+        return json.loads(binding_profile)
+    except ValueError as e:
+        LOG.warning("Could not load binding profile %s: %s", binding_profile, e)
+        return {}
+
+
+def get_host_from_port(port):
+    binding_profile = port.get('binding:profile')
+    switch = get_switch_from_local_link(binding_profile)
+    if switch:
+        return switch
+    return port.get('binding:host_id')
