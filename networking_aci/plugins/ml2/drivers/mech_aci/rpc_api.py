@@ -175,7 +175,7 @@ class AgentRpcCallback(object):
                         binding = None
                         if len(binding_levels) == 1 and binding_levels[0].driver == aci_constants.ACI_DRIVER_NAME:
                             # single binding level, see if it is a port directly attached to aci with a bm hostgroup
-                            if host_config['bm_mode']:
+                            if host_config['bm_mode'] != aci_constants.ACI_BM_NONE:
                                 binding = binding_levels[0]
                                 network_type = 'vlan'
                                 physical_network = None

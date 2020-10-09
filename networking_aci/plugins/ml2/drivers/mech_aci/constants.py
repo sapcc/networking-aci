@@ -17,3 +17,7 @@ ACI_TOPIC = "ACI"
 DEFAULT_ACI_RESPAWN = 30
 VIF_TYPE_ACI = 'aci'
 ACI_DRIVER_NAME = 'aci'  # same as setup.cfg aci = ... in entry_points
+
+ACI_BM_NONE = None
+ACI_BM_CUSTOMER = "customer"
+ACI_BM_CCLOUD = "ccloud"

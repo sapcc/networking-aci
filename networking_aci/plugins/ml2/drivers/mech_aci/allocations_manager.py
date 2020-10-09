@@ -25,6 +25,8 @@ from six import moves
 import sqlalchemy as sa
 
 from networking_aci._i18n import _LI
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
+
 
 LOG = log.getLogger(__name__)
 
@@ -270,7 +272,7 @@ class AllocationsManager(object):
                     session.delete(alloc)
 
     def _process_host_or_hostgroup(self, session, host, host_config, allocations, level):
-        if host_config["bm_mode"]:
+        if host_config["bm_mode"] != aci_constants.ACI_BM_NONE:
             # we don't need to handle allocations for hostgroups in baremetal mode
             return
 

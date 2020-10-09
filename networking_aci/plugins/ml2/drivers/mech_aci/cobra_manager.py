@@ -23,6 +23,7 @@ from oslo_config import cfg
 from oslo_log import log
 
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_client
+from networking_aci.plugins.ml2.drivers.mech_aci.constants import ACI_BM_NONE, ACI_BM_CUSTOMER, ACI_BM_CCLOUD
 
 
 LOG = log.getLogger(__name__)
@@ -178,11 +179,17 @@ class CobraManager(object):
             bindings = host_config['bindings']
             encap_mode = "regular"  # == trunk
 
-            if bm_mode:
+            if bm_mode == ACI_BM_NONE:
+                segment_type = host_config['segment_type']
+            else:
+                # bm mode customer / ccloud
                 segment_type = 'vlan'
                 if encap is None:
                     encap_mode = "untagged"  # == access
                     encap = 1
+
+            if bm_mode == ACI_BM_CUSTOMER:
+                # customer mode needs custom aep
                 aep_name = host_config['resource_name']
                 lacppol_name = cfg.CONF.ml2_aci.baremetal_lacp_policy
                 mcpifpol_name = cfg.CONF.ml2_aci.baremetal_mcp_policy
@@ -190,7 +197,7 @@ class CobraManager(object):
                 if not delete:
                     self._ensure_bm_aci_entities(host_config['resource_name'])
             else:
-                segment_type = host_config['segment_type']
+                # no bm mode / ccloud mode needs the ccloud defaults on vpc
                 # FIXME: we currently have no way to properly reset the aep of a vpc
                 #        we only can reset the aep if it is specified in config
                 aep_name = cfg.CONF.ml2_aci.default_aep
@@ -461,7 +468,7 @@ class CobraManager(object):
                 if host_config:
                     encap_mode = "regular"
                     encap = binding['encap']
-                    if host_config['bm_mode'] and encap is None:
+                    if host_config['bm_mode'] != ACI_BM_NONE and encap is None:
                         encap_mode = "untagged"
                         encap = 1
                     encap = self.get_static_binding_encap(binding['network_type'], encap)

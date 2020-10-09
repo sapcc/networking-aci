@@ -92,7 +92,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             # no segment available
             return
 
-        if host_config['bm_mode']:
+        if host_config['bm_mode'] != aci_constants.ACI_BM_NONE:
             # host directly connected to aci
             return self._bind_port_direct(context, port, host_id, host_config)
         else:
@@ -218,7 +218,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             curr_host_id, curr_host_config = self._host_or_host_group(curr_host)
 
             if orig_host_config and (curr_host_config is None or (curr_host_config and orig_host_id != curr_host_id)):
-                if cfg.CONF.ml2_aci.handle_port_update_for_non_baremetal or orig_host_config['bm_mode']:
+                if cfg.CONF.ml2_aci.handle_port_update_for_non_baremetal or \
+                        orig_host_config['bm_mode'] != aci_constants.ACI_BM_NONE:
                     # handle port update
                     LOG.info('Calling cleanup for port %s (hostgroup transition from "%s" to "%s")',
                              context.current['id'], orig_host_id, curr_host_id)
@@ -252,14 +253,14 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         if len(binding_levels) == 1:
             # only clean up in case of bm port when only one binding exists
-            if not host_config['bm_mode']:
+            if host_config['bm_mode'] == aci_constants.ACI_BM_NONE:
                 return False
             level = 0
         else:
             level = 1
         released = self.allocations_manager.release_segment(network, host_config, level, segment)
 
-        if host_config['bm_mode'] and not released:
+        if host_config['bm_mode'] != aci_constants.ACI_BM_NONE and not released:
             # check if we need to disconnect this bm host
             for other_host in self.db.get_bm_hosts_on_segment(self.context, segment['id']):
                 if other_host in host_config['hosts']:
