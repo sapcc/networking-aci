@@ -13,6 +13,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 from oslo_config import cfg
+from oslo_log import log
+
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
+
+
+LOG = log.getLogger(__name__)
 
 DEFAULT_ROOT_HELPER = ('sudo /usr/local/bin/neutron-rootwrap '
                        '/etc/neutron/rootwrap.conf')
@@ -139,7 +145,7 @@ def create_fixed_bindings_dictionary():
     conf = _get_specific_config('fixed-binding')
     for network_tag in conf:
         fixed_bindings_dict[network_tag] = {
-            'bm_mode': False,
+            'bm_mode': aci_constants.ACI_BM_NONE,
         }
         for key, value in conf[network_tag]:
             if key in ('bindings', 'physical_domain'):
@@ -166,17 +172,18 @@ def create_hostgroup_dictionary():
     conf = _get_specific_config('aci-hostgroup')
     for host in conf:
         d = {
-            'bm_mode': False,
+            'bm_mode': aci_constants.ACI_BM_NONE,
         }
         for key, value in conf[host]:
             if key in ('bindings', 'hosts', 'physical_domain'):
                 d[key] = value[0].split(",")
-            elif key in ('bm_mode',):
-                d[key] = value[0].lower() in ('yes', 'true')
             else:
                 d[key] = value[0]
 
-        if d['bm_mode']:
+        if d['bm_mode'] not in (aci_constants.ACI_BM_CUSTOMER, aci_constants.ACI_BM_CCLOUD, aci_constants.ACI_BM_NONE):
+            log.error("Unknown bm_mode '%s' set in hostgroup %s", d['bm_mode'], host)
+
+        if d['bm_mode'] == aci_constants.ACI_BM_CUSTOMER:
             resource_name = "{}-{}".format(CONF.ml2_aci.resource_prefix, host)
             # override physdom with generated name
             d['physical_domain'] = [resource_name]
