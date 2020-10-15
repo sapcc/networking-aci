@@ -64,9 +64,6 @@ aci_opts = [
     cfg.BoolOpt('support_remote_mac_clear',
                 default=True,
                 help="Region has API version supporting remote MAC clear"),
-    cfg.BoolOpt('sync_allocations',
-                default=True,
-                help="Sync allocations on startup"),
     cfg.StrOpt('ep_retention_policy_net_internal',
                default=None,
                help="Name of the endpoint retention policy to use for internal networks. "

@@ -88,5 +88,5 @@ def get_host_or_host_group(host_id, host_group_config):
     return host_id, None
 
 
-def get_segments(context, network_id):
-    return ml2_db.get_network_segments(context, network_id)
+def get_segments(context, network_id, filter_dynamic=None):
+    return ml2_db.get_network_segments(context, network_id, filter_dynamic)
