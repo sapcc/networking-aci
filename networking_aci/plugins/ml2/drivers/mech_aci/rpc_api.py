@@ -165,7 +165,7 @@ class AgentRpcCallback(object):
                     if switch:
                         config_host = switch
 
-                binding_levels = ml2_db.get_binding_levels(self.context, port['id'], binding_host)
+                binding_levels = ml2_db.get_binding_level_objs(self.context, port['id'], binding_host)
                 host_id, host_config = common.get_host_or_host_group(config_host, host_group_config)
 
                 if binding_levels:

@@ -13,7 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 from oslo_config import cfg
+
 from networking_aci.utils import multi_config_parser
+from neutron.conf import service as service_conf
+
 DEFAULT_ROOT_HELPER = ('sudo /usr/local/bin/neutron-rootwrap '
                        '/etc/neutron/rootwrap.conf')
 
@@ -84,6 +87,7 @@ cli_opts = [
 
 cfg.CONF.register_opts(aci_opts, "ml2_aci")
 # cfg.CONF.register_cli_opts(cli_opts)
+service_conf.register_service_opts(service_conf.RPC_EXTRA_OPTS, cfg.CONF)
 CONF = cfg.CONF
 # CONF()
 
