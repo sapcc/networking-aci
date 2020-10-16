@@ -83,7 +83,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         for segment in context.segments_to_bind:
             if segment[api.NETWORK_TYPE] == lib_const.TYPE_VXLAN:
-                # Allocate dynamic VLAN segment to bind next
+                # Allocate dynamic segment to bind next
                 next_segment = context.allocate_dynamic_segment(
                     {api.NETWORK_TYPE: segment_type,
                      api.PHYSICAL_NETWORK: segment_physnet}
