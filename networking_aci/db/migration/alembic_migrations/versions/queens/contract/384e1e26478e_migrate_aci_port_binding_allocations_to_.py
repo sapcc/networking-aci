@@ -32,7 +32,8 @@ down_revision = '981f4d71956'
 
 def upgrade():
     transfer_vlan_allocations()
-    op.drop_table('aci_port_binding_allocations')
+    # drop table another time
+    # op.drop_table('aci_port_binding_allocations')
 
 
 def transfer_vlan_allocations():

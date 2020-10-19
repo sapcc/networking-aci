@@ -19,7 +19,9 @@ from oslo_config import cfg
 import networking_aci.plugins.ml2.drivers.mech_aci.config  # noqa
 from neutron.plugins.ml2.drivers import type_vlan  # noqa
 from neutron.plugins.ml2.drivers import type_vxlan  # noqa
-from neutron.tests.unit import fake_resources as fakes
+from neutron_lib.plugins.ml2 import api
+from neutron.tests.unit.plugins.ml2 import _test_mech_agent as base
+
 from neutron.tests.unit.plugins.ml2 import test_plugin
 
 VIF_TYPE_TEST = 'vif_type_test'
@@ -55,78 +57,65 @@ class TestACIMechanismDriver(test_plugin.Ml2PluginV2TestCase):
             }
         }
 
-    def test_bind_port_unsupported_vnic_type(self):
-        fake_port = fakes.FakePort.create_one_port(
-            attrs={'binding:vnic_type': 'unknown'}).info()
-        fake_port_context = fakes.FakePortContext(fake_port, 'host', [])
-        self.mech_driver.bind_port(fake_port_context)
-        fake_port_context.set_binding.assert_not_called()
-
-    def _test_bind_port_failed(self, fake_segments, fake_host = 'host'):
-        fake_port = fakes.FakePort.create_one_port().info()
-        fake_port_context = fakes.FakePortContext(
-            fake_port, fake_host, fake_segments)
-        self.mech_driver.bind_port(fake_port_context)
-        fake_port_context.set_binding.assert_not_called()
+    def _make_port_ctx(self, agents):
+        segments = [{api.ID: 'local_segment_id', api.NETWORK_TYPE: 'local'}]
+        return base.FakePortContext(self.AGENT_TYPE, agents, segments,
+                                    vnic_type=self.VNIC_TYPE)
 
     def test_bind_port_host_not_found(self):
-        self._test_bind_port_failed([], fake_host='unknown')
+        fake_segments = [{'network_type': 'vxlan',
+                          'physical_network': 'fake-physnet',
+                          'segmentation_id': 23,
+                          'id': 'test-id'},]
+        context = self._test_bind_port(fake_segments, fake_host='unkown_host')
+        context.continue_binding.assert_not_called()
 
     def test_bind_port_no_segments_to_bind(self):
-        self._test_bind_port_failed([])
+        context = self._test_bind_port([])
+        context.continue_binding.assert_not_called()
 
     def test_bind_port_physnet_not_found(self):
-        segment_attrs = {'network_type': 'vlan',
+        fake_segments = [{'network_type': 'vlan',
                          'physical_network': 'unknown-physnet',
-                         'segmentation_id': 23}
-        fake_segments = \
-            [fakes.FakeSegment.create_one_segment(attrs=segment_attrs).info()]
-        self._test_bind_port_failed(fake_segments)
+                         'segmentation_id': 23,
+                          'id': 'test-id'}]
+        context = self._test_bind_port(fake_segments)
+        context.continue_binding.assert_not_called()
 
-    def _test_bind_port(self, fake_segments):
-        fake_port = fakes.FakePort.create_one_port().info()
-        fake_host = 'host'
-        fake_port_context = fakes.FakePortContext(
-            fake_port, fake_host, fake_segments)
-        fake_port_context.allocate_dynamic_segment = mock.Mock(return_value='somesegment')
-        fake_port_context.continue_binding = mock.Mock()
-        self.mech_driver.bind_port(fake_port_context)
-        fake_port_context.continue_binding.assert_called_once_with(
-            fake_segments[0]['id'], ['somesegment'])
-
-    def test_bind_port_dynamic_segment(self):
-        segment_attrs = {'network_type': 'vxlan',
-                         'physical_network': 'fake-physnet',
-                         'segmentation_id': 23}
-        fake_segments = \
-            [fakes.FakeSegment.create_one_segment(attrs=segment_attrs).info()]
-        self._test_bind_port(fake_segments)
-
-    def _get_fake_port_context(self, existing_ports):
-        fake_port = fakes.FakePort.create_one_port().info()
-        segment_attrs = {'network_type': 'vlan',
-                         'physical_network': 'fake-physnet',
-                         'segmentation_id': 23}
-        fake_segments = \
-            [fakes.FakeSegment.create_one_segment(attrs=segment_attrs).info()]
-        fake_port_context = fakes.FakePortContext(
-            fake_port, 'host', fake_segments)
-        fake_port_context.bottom_bound_segment = fake_segments[0]
-        fake_port_context.network = mock.Mock()
-        fake_port_context.network.current = {'id': '1234-1234-1234-1234'}
-        fake_port_context._plugin_context = None
-        fake_port_context._plugin = mock.Mock()
-        fake_port_context._plugin.get_ports_count.return_value = existing_ports
-        fake_port_context.release_dynamic_segment = mock.Mock()
+    def _test_bind_port(self, fake_segments, fake_host = 'host'):
+        with mock.patch.object(base.FakePortContext, 'host', new=fake_host):
+            fake_port_context = base.FakePortContext(
+                None, None, fake_segments)
+            fake_port_context.allocate_dynamic_segment = mock.Mock(return_value='somesegment')
+            fake_port_context.continue_binding = mock.Mock()
+            self.mech_driver.bind_port(fake_port_context)
         return fake_port_context
 
+    def test_bind_port_dynamic_segment(self):
+        fake_segments = [{'network_type': 'vxlan',
+                          'physical_network': 'fake-physnet',
+                          'segmentation_id': 23,
+                          'id': 'test-id'},]
+        context = self._test_bind_port(fake_segments)
+        context.continue_binding.assert_called_once_with(
+            fake_segments[0]['id'], ['somesegment'])
+
     def test_delete_port(self):
-        fake_port_context = self._get_fake_port_context(1)
+        fake_segments = [{'network_type': 'vxlan',
+                          'physical_network': 'fake-physnet',
+                          'segmentation_id': 23,
+                          'id': 'test-id'},]
+
+        fake_port_context = mock.MagicMock()
+        fake_port_context.bottom_bound_segment = fake_segments[0]
+        fake_port_context.network.current = {'id': 'network-test-id'}
+        fake_port_context.host = 'host'
+        fake_port_context._plugin.get_ports_count.side_effect = [1, 0]
+
+        # Ports still existing, segment shouldn't be release
         self.mech_driver.delete_port_postcommit(fake_port_context)
         fake_port_context.release_dynamic_segment.assert_not_called()
 
-    def test_delete_port_and_release_segment(self):
-        fake_port_context = self._get_fake_port_context(0)
+        # Now segment should be released as well
         self.mech_driver.delete_port_postcommit(fake_port_context)
-        fake_port_context.release_dynamic_segment.assert_called_once_with(
-            fake_port_context.fake_segments_to_bind[0]['id'])
+        fake_port_context.release_dynamic_segment.assert_called_once_with(fake_segments[0]['id'])
