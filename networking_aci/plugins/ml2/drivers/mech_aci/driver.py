@@ -18,12 +18,12 @@ from neutron_lib.plugins.ml2 import api
 from neutron.db import api as db_api
 from neutron.db.models import segment as segment_model
 from neutron.common import rpc as n_rpc
+from neutron_lib import constants as lib_const
 from neutron.plugins.ml2 import models
 from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
 
 from networking_aci._i18n import _LI, _LW
-from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import common
 import rpc_api
@@ -38,7 +38,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.conn = None
         self.network_config = common.get_network_config()
         self.host_group_config = self.network_config['hostgroup_dict']
-        self.allocations_manager = allocations.AllocationsManager(self.network_config)
 
         self.db = common.DBPlugin()
         self.context = context.get_admin_context_without_session()
@@ -66,8 +65,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
     def bind_port(self, context):
         port = context.current
-        network = context.network.current
-        network_id = network['id']
         host = context.host
         binding_profile = context.current.get('binding:profile')
         switch = CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
@@ -79,39 +76,22 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         host_id, host_config = self._host_or_host_group(host)
 
         if not host_config:
-            return False
+            return
 
         segment_type = host_config.get('segment_type', 'vlan')
         segment_physnet = host_config.get('physical_network', None)
 
         for segment in context.segments_to_bind:
-            if context.binding_levels is None:
-                # For now we assume only two levels in hierarchy. The top level VXLAN/VLAN and
-                # one dynamically allocated segment at level 1
-                level = 1
-                allocation = self.allocations_manager.allocate_segment(network, host_id, level, host_config)
-
-                if not allocation:
-                    LOG.error("Binding failed, could not allocate a segment for further binding levels "
-                              "for port %(port)s",
-                              {'port': context.current['id']})
-                    return False
-
-                next_segment = {
-                    'segmentation_id': allocation.segmentation_id,
-                    'network_id': network_id,
-                    'network_type': segment_type,
-                    'physical_network': segment_physnet,
-                    'id': allocation.segment_id,
-                    'is_dynamic': False,
-                    'segment_index': level
-                }
+            if segment[api.NETWORK_TYPE] == lib_const.TYPE_VXLAN:
+                # Allocate dynamic segment to bind next
+                next_segment = context.allocate_dynamic_segment(
+                    {api.NETWORK_TYPE: segment_type,
+                     api.PHYSICAL_NETWORK: segment_physnet}
+                )
 
                 LOG.info("Next segment to bind for port %s: %s", port['id'], next_segment)
                 self.rpc_notifier.bind_port(port, host_config, segment, next_segment)
-                context.continue_binding(segment["id"], [next_segment])
-
-                return True
+                context.continue_binding(segment['id'], [next_segment])
 
     # Network callbacks
     def create_network_postcommit(self, context):
@@ -177,16 +157,15 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         if not host_config:
             return False
-
         if segment:
-            # Get segment from ml2_port_binding_levels based on segment_id and host
             # if no ports on this segment for host we can remove the aci allocation
-            released = self.allocations_manager.release_segment(context.network.current, host_config, 1, segment)
+            filter = {'binding:host_id': [host],
+                      'network_id': [context.network.current['id']]}
+            if not context._plugin.get_ports_count(context._plugin_context, filter):
+                context.release_dynamic_segment(segment['id'])
 
-            # Call to ACI to delete port if the segment is released i.e.
-            # port is the last for the network one on the host
-            if released:
-                # Check if physical domain should be cleared
+                # Call to ACI to delete port if the segment is released i.e.
+                # port is the last for the network one on the host
                 clearable_phys_doms = self._get_clearable_phys_doms(context.network.current, segment, host_config)
                 self.rpc_notifier.delete_port(context.current, host_config, clearable_phys_doms)
 
