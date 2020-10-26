@@ -19,12 +19,14 @@ from neutron_lib.db import model_base
 from neutron.db.models import segment as ml2_models
 from neutron.plugins.ml2 import models
 from oslo_config import cfg
+from oslo_db import exception as db_exc
 from oslo_log import log
 from oslo_utils import uuidutils
 from six import moves
 import sqlalchemy as sa
 
 from networking_aci._i18n import _LI
+from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import NoAllocationFoundInMaximumAllowedAttempts
 
 LOG = log.getLogger(__name__)
 
@@ -38,6 +40,13 @@ class AllocationsModel(model_base.BASEV2):
     segmentation_id = sa.Column(sa.Integer(), nullable=False, primary_key=True)
     segment_id = sa.Column(sa.String(36), nullable=True)
     network_id = sa.Column(sa.String(36), nullable=True)
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            host, level, segment_type, network_id,
+            name='restrict_one_segment_per_host_level_segtype_network'),
+        model_base.BASEV2.__table_args__
+    )
 
 
 class AllocationsManager(object):
@@ -101,6 +110,7 @@ class AllocationsManager(object):
         return AllocationsModel(host=host_id, level=level, segment_type=segment_type, segmentation_id=segmentation_id,
                                 segment_id=segment.id, network_id=network_id)
 
+    @db_api.retry_db_errors
     def _allocate_vxlan_segment(self, network, host_id, level, host_config):
         LOG.info(_LI("Allocating segment for network type VXLAN"))
         segment_type = host_config.get('segment_type', 'vlan')
@@ -108,7 +118,7 @@ class AllocationsManager(object):
         network_id = network['id']
 
         session = db_api.get_writer_session()
-        with session.begin(subtransactions=True):
+        with db_api.exc_to_retry(db_exc.IntegrityError), session.begin(subtransactions=True):
             LOG.debug("Searching for available allocation for host id %(host_id)s "
                       "segment_type %(segment_type)s network_id %(network_id)s segment_physnet %(segment_physnet)s",
                       {"host_id": host_id, "segment_type": segment_type, "segment_physnet": segment_physnet,
@@ -168,7 +178,7 @@ class AllocationsManager(object):
             LOG.debug("Allocate %(type)s segment from pool failed with segment %(segment)s",
                       {"type": alloc.segment_type, "segment": alloc.segment_id, "level": alloc.level})
 
-            session.commit()
+            raise db_exc.RetryRequest(NoAllocationFoundInMaximumAllowedAttempts())
 
     def release_segment(self, network, host_config, level, segment):
         LOG.info("Releasing segment %(segment)s", {"segment": segment})
