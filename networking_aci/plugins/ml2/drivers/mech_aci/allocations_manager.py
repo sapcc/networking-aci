@@ -38,8 +38,8 @@ class AllocationsModel(model_base.BASEV2):
     level = sa.Column(sa.Integer(), nullable=False, primary_key=True)
     segment_type = sa.Column(sa.String(255), nullable=False, primary_key=True)
     segmentation_id = sa.Column(sa.Integer(), nullable=False, primary_key=True)
-    segment_id = sa.Column(sa.String(36), nullable=True)
-    network_id = sa.Column(sa.String(36), nullable=True)
+    segment_id = sa.Column(sa.String(36), sa.ForeignKey('networksegments.id', ondelete='SET NULL'), nullable=True)
+    network_id = sa.Column(sa.String(36), sa.ForeignKey('networks.id', ondelete='SET NULL'), nullable=True)
 
     __table_args__ = (
         sa.UniqueConstraint(
@@ -54,8 +54,6 @@ class AllocationsManager(object):
         self.hostgroup_config = network_config['hostgroup_dict']
         if cfg.CONF.ml2_aci.sync_allocations:
             self._sync_allocations()
-        self.primary_keys = set(dict(AllocationsModel.__table__.columns))
-        self.primary_keys.remove("network_id")
 
     def initialize(self):
         self._sync_allocations()
@@ -118,7 +116,7 @@ class AllocationsManager(object):
         network_id = network['id']
 
         session = db_api.get_writer_session()
-        with db_api.exc_to_retry(db_exc.IntegrityError), session.begin(subtransactions=True):
+        with db_api.exc_to_retry(sa.exc.IntegrityError), session.begin(subtransactions=True):
             LOG.debug("Searching for available allocation for host id %(host_id)s "
                       "segment_type %(segment_type)s network_id %(network_id)s segment_physnet %(segment_physnet)s",
                       {"host_id": host_id, "segment_type": segment_type, "segment_physnet": segment_physnet,
@@ -127,18 +125,12 @@ class AllocationsManager(object):
 
             alloc = session.query(AllocationsModel).filter_by(host=host_id, level=level, segment_type=segment_type,
                                                               network_id=network_id).first()
-            if alloc:
-                # check if segment is existing, if not the allocation should be deleted and a new one allocated
-                segment = (session.query(ml2_models.NetworkSegment).filter_by(id=alloc.segment_id).first())
-                if segment:
-                    return alloc
-                else:
-                    # TODO : handle case when allocation is on a segment no longer configured for use
-                    # Or we can leave until 'natural' cleanup happens
-                    alloc.update({"network_id": None, "segment_id": None})
+            if alloc and alloc.segment_id:
+                return alloc
 
+            # we regard a segment as unallocated if its segment_id is None
             select = (session.query(AllocationsModel).
-                      filter_by(host=host_id, level=level, segment_type=segment_type, network_id=None))
+                      filter_by(host=host_id, level=level, segment_type=segment_type, segment_id=None))
 
             # Selected segment can be allocated before update by someone else,
             allocs = select.limit(100).all()
@@ -161,12 +153,17 @@ class AllocationsManager(object):
             )
             session.add(segment)
 
-            raw_segment = dict((k, alloc[k]) for k in self.primary_keys)
+            raw_segment = {
+                'host': alloc.host,
+                'level': alloc.level,
+                'segment_type': alloc.segment_type,
+                'segmentation_id': alloc.segmentation_id,
+            }
             LOG.debug("%(type)s segment allocated from pool with %(segment)s ",
                       {"type": alloc.segment_type, "segment": alloc.segmentation_id})
 
             count = (session.query(AllocationsModel).
-                     filter_by(network_id=None, **raw_segment).
+                     filter_by(segment_id=None, **raw_segment).
                      update({"network_id": network_id, 'segment_id': segment.id}))
 
             if count:
