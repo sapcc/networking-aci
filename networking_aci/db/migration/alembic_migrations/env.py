@@ -8,6 +8,7 @@ from sqlalchemy import event
 
 from neutron.db.migration.alembic_migrations import external
 from neutron.db.migration.models import head  # noqa
+from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager  # noqa
 from neutron_lib.db import model_base
 
 # this is the Alembic Config object, which provides
