@@ -36,8 +36,8 @@ class AllocationsModel(model_base.BASEV2):
     level = sa.Column(sa.Integer(), nullable=False, primary_key=True)
     segment_type = sa.Column(sa.String(255), nullable=False, primary_key=True)
     segmentation_id = sa.Column(sa.Integer(), nullable=False, primary_key=True)
-    segment_id = sa.Column(sa.String(36), nullable=False)
-    network_id = sa.Column(sa.String(36), nullable=False)
+    segment_id = sa.Column(sa.String(36), nullable=True)
+    network_id = sa.Column(sa.String(36), nullable=True)
 
 
 class AllocationsManager(object):
