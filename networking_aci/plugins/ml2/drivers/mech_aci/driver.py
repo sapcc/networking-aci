@@ -76,20 +76,24 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             host = switch
 
         LOG.info("Using binding host %s for binding port %s", host, port['id'])
-        host_id, host_config = self._host_or_host_group(host)
+        host_group_name, host_config = self._host_or_host_group(host)
 
         if not host_config:
             return False
 
         segment_type = host_config.get('segment_type', 'vlan')
-        segment_physnet = host_config.get('physical_network', None)
+        segment_physnet = host_config.get('physical_network')
+        if not segment_physnet:
+            LOG.error("Cannot bind port %s: Hostgroup %s has no physical_network set, cannot allocate segment",
+                      port['id'], host_group_name)
+            return
 
         for segment in context.segments_to_bind:
             if context.binding_levels is None:
                 # For now we assume only two levels in hierarchy. The top level VXLAN/VLAN and
                 # one dynamically allocated segment at level 1
                 level = 1
-                allocation = self.allocations_manager.allocate_segment(network, host_id, level, host_config)
+                allocation = self.allocations_manager.allocate_segment(network, segment_physnet, level, host_config)
 
                 if not allocation:
                     LOG.error("Binding failed, could not allocate a segment for further binding levels "
@@ -173,7 +177,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         if switch:
             host = switch
-        host_id, host_config = self._host_or_host_group(host)
+        _, host_config = self._host_or_host_group(host)
 
         if not host_config:
             return False
