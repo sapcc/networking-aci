@@ -166,51 +166,56 @@ class AgentRpcCallback(object):
                 if switch:
                     config_host = switch
 
-            if config_host not in processed_hosts:
-                host_id, host_config = common.get_host_or_host_group(config_host, host_group_config)
-                if host_id not in bindings and host_config:
-                    binding_levels = ml2_db.get_binding_levels(self.context, port['id'], binding_host)
+            if config_host in processed_hosts:
+                continue
 
-                    if binding_levels:
-                        binding = None
-                        if len(binding_levels) == 1 and binding_levels[0].driver == aci_constants.ACI_DRIVER_NAME:
-                            # single binding level, see if it is a port directly attached to aci with a bm hostgroup
-                            if host_config['bm_mode'] != aci_constants.ACI_BM_NONE:
-                                binding = binding_levels[0]
-                                network_type = 'vlan'
-                                physical_network = None
-                                if port.get('device_owner') == trunk_const.TRUNK_SUBPORT_OWNER:
-                                    # this is a trunk port
-                                    encap = binding_profile.get('aci_trunk', {}).get('segmentation_id')
-                                    if encap is None:
-                                        LOG.error("Found port %s as trunk subport but without an encap - "
-                                                  "this is very uncommon",
-                                                  port['id'])
-                                else:
-                                    # this is an access port (trunk vlans will be handled after adding this binding)
-                                    encap = None
-                        else:
-                            for binding_level in binding_levels:
-                                if binding_level.level == 1:
-                                    segment = segment_dict.get(binding_level.segment_id)
-                                    if segment:
-                                        binding = binding_level
-                                        encap = segment.get('segmentation_id')
-                                        network_type = segment.get('network_type')
-                                        physical_network = segment.get('physical_network')
-                                        break
+            host_id, host_config = common.get_host_or_host_group(config_host, host_group_config)
+            if host_id in bindings or host_config is None:
+                continue
 
-                        if binding:
-                            # Store one binding for each binding host
-                            bindings[host_id] = {
-                                'binding:host_id': binding_host,
-                                'host_id': config_host,
-                                'host_config': host_config,
-                                'encap': encap,
-                                'network_type': network_type,
-                                'physical_network': physical_network,
-                            }
-                            processed_hosts.append(binding_host)
+            binding_levels = ml2_db.get_binding_levels(self.context, port['id'], binding_host)
+            if not binding_levels:
+                continue
+
+            binding = None
+            if len(binding_levels) == 1 and binding_levels[0].driver == aci_constants.ACI_DRIVER_NAME:
+                # single binding level, see if it is a port directly attached to aci with a bm hostgroup
+                if host_config['bm_mode'] != aci_constants.ACI_BM_NONE:
+                    binding = binding_levels[0]
+                    network_type = 'vlan'
+                    physical_network = None
+                    if port.get('device_owner') == trunk_const.TRUNK_SUBPORT_OWNER:
+                        # this is a trunk port
+                        encap = binding_profile.get('aci_trunk', {}).get('segmentation_id')
+                        if encap is None:
+                            LOG.error("Found port %s as trunk subport but without an encap - "
+                                      "this is very uncommon",
+                                      port['id'])
+                    else:
+                        # this is an access port (trunk vlans will be handled after adding this binding)
+                        encap = None
+            else:
+                for binding_level in binding_levels:
+                    if binding_level.level == 1:
+                        segment = segment_dict.get(binding_level.segment_id)
+                        if segment:
+                            binding = binding_level
+                            encap = segment.get('segmentation_id')
+                            network_type = segment.get('network_type')
+                            physical_network = segment.get('physical_network')
+                            break
+
+            if binding:
+                # Store one binding for each binding host
+                bindings[host_id] = {
+                    'binding:host_id': binding_host,
+                    'host_id': config_host,
+                    'host_config': host_config,
+                    'encap': encap,
+                    'network_type': network_type,
+                    'physical_network': physical_network,
+                }
+                processed_hosts.append(binding_host)
 
         result['bindings'] = list(bindings.values())
 
