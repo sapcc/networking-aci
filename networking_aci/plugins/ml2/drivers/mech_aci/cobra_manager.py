@@ -184,9 +184,11 @@ class CobraManager(object):
             else:
                 # bm mode customer / ccloud
                 segment_type = 'vlan'
-                if encap is None:
+                if encap is None or bm_mode == ACI_BM_CCLOUD:
+                    # ccloud is always untagged, customer only with encap == None
                     encap_mode = "untagged"  # == access
-                    encap = 1
+                    if encap is None:
+                        encap = 1
 
             if bm_mode == ACI_BM_CUSTOMER:
                 # customer mode needs custom aep

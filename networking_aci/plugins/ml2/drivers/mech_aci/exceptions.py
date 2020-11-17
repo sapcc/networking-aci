@@ -17,3 +17,7 @@ from neutron_lib import exceptions
 
 class NoAllocationFoundInMaximumAllowedAttempts(exceptions.NeutronException):
     message = "No free allocation could be found within the maximum number of allowed attempts"
+
+
+class TrunkHostgroupNotInBaremetalMode(exceptions.NeutronException):
+    message = "Cannot create trunk on for port %(port_id)s: Hostgroup %(host_group)s is not in baremetal-mode"

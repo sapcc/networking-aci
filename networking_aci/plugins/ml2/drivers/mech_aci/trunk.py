@@ -4,6 +4,7 @@ from neutron_lib.callbacks import events, registry
 from neutron_lib import constants as n_const
 from neutron_lib import context
 from neutron_lib.plugins import directory
+from neutron_lib.exceptions import NeutronException
 from neutron_lib.api.definitions import port as p_api
 from neutron_lib.api.definitions import portbindings
 from neutron.services.trunk import constants as trunk_const
@@ -11,6 +12,8 @@ from neutron.services.trunk.drivers import base
 from oslo_config import cfg
 
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
+from networking_aci.plugins.ml2.drivers.mech_aci import common
+from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkHostgroupNotInBaremetalMode
 
 
 LOG = logging.getLogger(__name__)
@@ -25,6 +28,10 @@ SUPPORTED_SEGMENTATION_TYPES = (
 
 
 class ACITrunkDriver(base.DriverBase):
+    def __init__(self, host_group_config, *args, **kwargs):
+        self._host_group_config = host_group_config
+        super(ACITrunkDriver, self).__init__(*args, **kwargs)
+
     @property
     def is_loaded(self):
         try:
@@ -33,8 +40,9 @@ class ACITrunkDriver(base.DriverBase):
             return False
 
     @classmethod
-    def create(cls):
-        return cls(NAME, SUPPORTED_INTERFACES, SUPPORTED_SEGMENTATION_TYPES, can_trunk_bound_port=True)
+    def create(cls, host_group_config):
+        return cls(host_group_config, NAME, SUPPORTED_INTERFACES, SUPPORTED_SEGMENTATION_TYPES,
+                   can_trunk_bound_port=True)
 
     @registry.receives(trunk_const.TRUNK_PLUGIN, [events.AFTER_INIT])
     def register(self, resource, event, trigger, payload=None):
@@ -42,11 +50,24 @@ class ACITrunkDriver(base.DriverBase):
 
         self.core_plugin = directory.get_plugin()
 
+        registry.subscribe(self.trunk_check_valid, trunk_const.TRUNK, events.PRECOMMIT_CREATE)
         registry.subscribe(self.trunk_create, trunk_const.TRUNK, events.AFTER_CREATE)
         registry.subscribe(self.trunk_update, trunk_const.TRUNK, events.AFTER_UPDATE)
         registry.subscribe(self.trunk_delete, trunk_const.TRUNK, events.AFTER_DELETE)
         registry.subscribe(self.subport_create, trunk_const.SUBPORTS, events.AFTER_CREATE)
         registry.subscribe(self.subport_delete, trunk_const.SUBPORTS, events.AFTER_DELETE)
+
+    def trunk_check_valid(self, resource, event, trunk_plugin, payload):
+        ctx = context.get_admin_context()
+        parent = self.core_plugin.get_port(ctx, payload.current_trunk.port_id)
+        parent_host = common.get_host_from_port(parent)
+        LOG.debug("Trunk check valid called, got port %s with host %s", parent, parent_host)
+        host_group, host_config = common.get_host_or_host_group(parent_host, self._host_group_config)
+        if not host_config:
+            raise NeutronException("No host config for port {} host {}"
+                                   .format(payload.current_trunk.port_id, parent_host))
+        if host_config['bm_mode'] != aci_const.ACI_BM_CUSTOMER:
+            raise TrunkHostgroupNotInBaremetalMode(port_id=payload.current_trunk.port_id, host_group=host_group)
 
     def trunk_create(self, resource, event, trunk_plugin, payload):
         LOG.info("Trunk create called, resource %s payload %s trunk id %s",

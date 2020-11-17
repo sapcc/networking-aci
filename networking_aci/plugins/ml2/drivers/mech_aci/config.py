@@ -191,4 +191,14 @@ def create_hostgroup_dictionary():
 
         host_dict[host] = d
 
+    for host in host_dict:
+        inherit_physnet = host_dict[host].get('inherit_physical_network')
+        if inherit_physnet:
+            if inherit_physnet not in host_dict:
+                LOG.error("Hostgroup %s should inherit physical network from hostgroup %s, but it doesn't exist!",
+                          host, inherit_physnet)
+                continue
+            for key in 'physical_network', 'segment_type', 'segment_range', 'physical_domain':
+                host_dict[host][key] = host_dict[inherit_physnet][key]
+
     return host_dict

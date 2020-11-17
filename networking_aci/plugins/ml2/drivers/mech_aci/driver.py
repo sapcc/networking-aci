@@ -48,7 +48,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.context = context.get_admin_context()
         self.rpc_notifier = rpc_api.ACIRpcClientAPI(self.rpc_context)
         self.start_rpc_listeners()
-        self.trunk_driver = ACITrunkDriver.create()
+        self.trunk_driver = ACITrunkDriver.create(self.host_group_config)
 
     def initialize(self):
         pass
@@ -79,30 +79,33 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             host = switch
 
         LOG.info("Using binding host %s for binding port %s", host, port['id'])
-        host_id, host_config = self._host_or_host_group(host)
+        host_group_name, host_config = self._host_or_host_group(host)
 
-        if not host_config:
-            return False
-
-        if context.binding_levels is not None:
-            # hierarchical port bind already in progress
+        if not host_config or len(context.segments_to_bind) < 1:
+            LOG.warning("No aci config found for binding host %s", host)
             return
 
         if len(context.segments_to_bind) < 1:
             # no segment available
             return
 
-        if host_config['bm_mode'] != aci_constants.ACI_BM_NONE:
-            # host directly connected to aci
-            return self._bind_port_direct(context, port, host_id, host_config)
-        else:
-            return self._bind_port_hierarchical(context, port, host_id, host_config)
+        if context.binding_levels is None and host_config['bm_mode'] != aci_constants.ACI_BM_CUSTOMER:
+            # hierarchical portbinding for a) "normal ports" b) ccloud-mode bm
+            return self._bind_port_hierarchical(context, port, host_group_name, host_config)
+        elif host_config['bm_mode'] == aci_constants.ACI_BM_CUSTOMER or \
+                host_config['bm_mode'] == aci_constants.ACI_BM_CCLOUD and context.binding_levels is not None:
+            # direct bindings for a) customer-mode bm on aci and b) ccloud-mode bm (2nd level)
+            return self._bind_port_direct(context, port, host_group_name, host_config)
 
-    def _bind_port_direct(self, context, port, host_id, host_config):
+    def _bind_port_direct(self, context, port, host_group_name, host_config):
         binding_profile = common.get_binding_profile(port.get('binding:profile'))
+        if host_config['bm_mode'] == aci_constants.ACI_BM_CUSTOMER:
+            segment_physnet = None
+        else:
+            segment_physnet = host_config.get('physical_network')
 
         for segment in context.segments_to_bind:
-            if segment[api.PHYSICAL_NETWORK] is None:
+            if segment[api.PHYSICAL_NETWORK] == segment_physnet:
                 vif_details = {
                     'aci_directly_bound': True,
                 }
@@ -112,28 +115,42 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                     next_segment['segmentation_id'] = binding_profile['aci_trunk'].get('segmentation_id')
                     extra_info = "(trunk vlan {})".format(next_segment['segmentation_id'])
                 else:
-                    next_segment['segmentation_id'] = None
+                    if host_config['bm_mode'] == aci_constants.ACI_BM_CCLOUD:
+                        next_segment['segmentation_id'] = segment['segmentation_id']
+                    else:
+                        next_segment['segmentation_id'] = None
                     extra_info = "(access port)"
 
                 self.rpc_notifier.bind_port(port, host_config, segment, next_segment)
                 context.set_binding(segment['id'], aci_constants.ACI_DRIVER_NAME, vif_details, n_const.ACTIVE)
                 LOG.info("Directly bound port %s to hostgroup %s with segment %s %s",
-                         port['id'], host_id, segment['id'], extra_info)
+                         port['id'], host_group_name, segment['id'], extra_info)
 
-                return True
+                return
 
-    def _bind_port_hierarchical(self, context, port, host_id, host_config):
+    def _bind_port_hierarchical(self, context, port, host_group_name, host_config):
         network = context.network.current
         network_id = network['id']
         segment_type = host_config.get('segment_type', 'vlan')
-        segment_physnet = host_config.get('physical_network', None)
+        segment_physnet = host_config.get('physical_network')
+        if not segment_physnet:
+            LOG.error("Cannot bind port %s: Hostgroup %s has no physical_network set, cannot allocate segment",
+                      port['id'], host_group_name)
+            return
 
-        segment = context.segments_to_bind[0]
+        # find the top segment (no physnet, type vxlan)
+        for segment in context.segments_to_bind:
+            if segment[api.NETWORK_TYPE] == 'vxlan' and segment['physical_network'] is None:
+                break
+        else:
+            LOG.error("No usable segment found for hierarchical portbinding, candidates were: %s",
+                      context.segments_to_bind)
+            return
 
         # For now we assume only two levels in hierarchy. The top level VXLAN/VLAN and
         # one dynamically allocated segment at level 1
         level = 1
-        allocation = self.allocations_manager.allocate_segment(network, host_id, level, host_config)
+        allocation = self.allocations_manager.allocate_segment(network, segment_physnet, level, host_config)
 
         if not allocation:
             LOG.error("Binding failed, could not allocate a segment for further binding levels "
@@ -245,16 +262,16 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         config_host = common.get_host_from_port(port)
         host_id, host_config = self._host_or_host_group(config_host)
         if not host_config or not segment:
-            return False
+            return
 
         # only handle cleanup for ports bound by the aci driver as top segment
         if binding_levels[0][api.BOUND_DRIVER] != aci_constants.ACI_DRIVER_NAME:
             return
 
         if len(binding_levels) == 1:
-            # only clean up in case of bm port when only one binding exists
-            if host_config['bm_mode'] == aci_constants.ACI_BM_NONE:
-                return False
+            # only clean up in case of customer bm port when only one binding exists
+            if host_config['bm_mode'] != aci_constants.ACI_BM_CUSTOMER:
+                return
             level = 0
         else:
             level = 1
