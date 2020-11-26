@@ -170,6 +170,19 @@ class CobraManager(object):
             tenant.delete()
             self.apic.commit(tenant)
 
+    @staticmethod
+    def get_encap_config(encap, host_config):
+        encap_mode = "regular"  # == trunk
+        bm_mode = host_config['bm_mode']
+
+        if bm_mode == ACI_BM_CCLOUD or bm_mode == ACI_BM_CUSTOMER and encap is None:
+            # ccloud is always untagged, customer only with encap == None
+            encap_mode = "untagged"  # == access
+            if encap is None:
+                encap = 1
+
+        return encap_mode, encap
+
     def ensure_static_bindings_configured(self, network_id, host_config, encap=None,
                                           delete=False, physdoms_to_clear=[]):
         tenant = self.get_tenant(network_id)
@@ -177,67 +190,42 @@ class CobraManager(object):
         if tenant:
             bm_mode = host_config['bm_mode']
             bindings = host_config['bindings']
-            encap_mode = "regular"  # == trunk
+            encap_mode, encap = self.get_encap_config(encap, host_config)
+            pc_policy_group = None
 
             if bm_mode == ACI_BM_NONE:
                 segment_type = host_config['segment_type']
             else:
                 # bm mode customer / ccloud
                 segment_type = 'vlan'
-                if encap is None or bm_mode == ACI_BM_CCLOUD:
-                    # ccloud is always untagged, customer only with encap == None
-                    encap_mode = "untagged"  # == access
-                    if encap is None:
-                        encap = 1
 
-            if bm_mode == ACI_BM_CUSTOMER:
-                # customer mode needs custom aep
-                aep_name = host_config['resource_name']
-                lacppol_name = cfg.CONF.ml2_aci.baremetal_lacp_policy
-                mcpifpol_name = cfg.CONF.ml2_aci.baremetal_mcp_policy
-                l2ifpol_name = cfg.CONF.ml2_aci.baremetal_l2iface_policy
-                if not delete:
-                    self._ensure_bm_aci_entities(host_config['resource_name'])
-            else:
-                # no bm mode / ccloud mode needs the ccloud defaults on vpc
-                # FIXME: we currently have no way to properly reset the aep of a vpc
-                #        we only can reset the aep if it is specified in config
-                aep_name = cfg.CONF.ml2_aci.default_aep
-                lacppol_name = cfg.CONF.ml2_aci.default_lacp_policy
-                mcpifpol_name = cfg.CONF.ml2_aci.default_mcp_policy
-                l2ifpol_name = cfg.CONF.ml2_aci.default_l2iface_policy
+            if not delete:
+                if bm_mode == ACI_BM_CUSTOMER:
+                    self._ensure_bm_aci_entities(host_config['resource_name'], host_config['bm_pc_profile'])
+                    pc_policy_group = host_config['resource_name']
+                elif bm_mode == ACI_BM_CCLOUD:
+                    pc_policy_group = host_config.get('ccloud_pc_policy_group')
 
             encap = self.get_static_binding_encap(segment_type, encap)
             app = fv.Ap(tenant, self.apic_application_profile)
             epg = fv.AEPg(app, network_id)
-            aep = infra.AttEntityP('uni/infra', name=aep_name)  # only for reference, won't be committed
             entities = []
 
+            if pc_policy_group:
+                pol_ref = infra.AccBndlGrp('uni/infra/funcprof', name=pc_policy_group)  # only used as reference
+                for port_profile in host_config['port_profiles']:
+                    if not port_profile.startswith("uni/"):
+                        port_profile = "uni/infra/accportprof-{}/hports-{}-typ-range".format(*port_profile.split("/"))
+                    acc_base_grp = infra.RsAccBaseGrp(port_profile, tDn=pol_ref.dn)
+                    entities.append(acc_base_grp)
+
             for binding in bindings:
-                # configure interface
-                accbndlgrp = infra.AccBndlGrp('uni/infra/funcprof', name=binding.split("/")[-1])  # only for reference
-
-                if aep_name is not None:
-                    rsattentp = infra.RsAttEntP(accbndlgrp, tDn=aep.dn)
-                    entities.append(rsattentp)
-
-                if lacppol_name is not None:
-                    lacppol = infra.RsLacpPol(accbndlgrp, tnLacpLagPolName=lacppol_name)
-                    entities.append(lacppol)
-                if mcpifpol_name is not None:
-                    mcpifpol = infra.RsMcpIfPol(accbndlgrp, tnMcpIfPolName=mcpifpol_name)
-                    entities.append(mcpifpol)
-                if l2ifpol_name is not None:
-                    l2ifpol = infra.RsL2IfPol(accbndlgrp, tnL2IfPolName=l2ifpol_name)
-                    entities.append(l2ifpol)
-
                 # add interface to epg
                 pdn = self.get_pdn(binding)
                 LOG.debug("Preparing static binding %s encap %s for network %s", pdn, encap, network_id)
                 port = fv.RsPathAtt(epg, pdn, encap=encap, mode=encap_mode)
                 if delete:
                     port.delete()
-
                 entities.append(port)
 
             self.apic.commit(entities)
@@ -249,7 +237,8 @@ class CobraManager(object):
             LOG.error("Network {} does not appear to be avilable in ACI, expected in tenant {}"
                       .format(network_id, self.tenant_manager.get_tenant_name(network_id)))
 
-    def _ensure_bm_aci_entities(self, resource_name):
+    def _ensure_bm_aci_entities(self, resource_name, pc_profile_data):
+        # aep, physdom, vlan pool
         aep = infra.AttEntityP('uni/infra', name=resource_name)
         physdom = phys.DomP('uni', resource_name)
         vlan_pool = fvns.VlanInstP('uni/infra', name=resource_name, allocMode="static")
@@ -258,7 +247,28 @@ class CobraManager(object):
         dom_vlan_pool_rel = infra.RsVlanNs(physdom, tDn=vlan_pool.dn)
         aep_dom_rel = infra.RsDomP(aep, physdom.dn)
 
-        self.apic.commit([aep, physdom, vlan_pool, encap_blk, dom_vlan_pool_rel, aep_dom_rel])
+        aep_entities = [aep, physdom, vlan_pool, encap_blk, dom_vlan_pool_rel, aep_dom_rel]
+
+        # pc profile
+        pc_profile = infra.AccBndlGrp('uni/infra/funcprof', name=resource_name, lagT=pc_profile_data['lag_mode'])
+        pc_entities = [pc_profile]
+        pc_attrs = [
+            ('link_level_policy', infra.RsHIfPol, 'tnFabricHIfPolName'),
+            ('cdp_policy', infra.RsCdpIfPol, 'tnCdpIfPolName'),
+            ('lldp_policy', infra.RsLldpIfPol, 'tnLldpIfPolName'),
+            ('lapc_policy', infra.RsLacpPol, 'tnLacpLagPolName'),
+            ('mcp_policy', infra.RsMcpIfPol, 'tnMcpIfPolName'),
+            ('monitoring_policy', infra.RsMonIfInfraPol, 'tnMonInfraPolName'),
+            ('l2_policy', infra.RsL2IfPol, 'tnL2IfPolName'),
+        ]
+        for pc_conf_name, pc_rs, pc_attr in pc_attrs:
+            pc_attr_val = pc_profile_data[pc_conf_name]
+            if pc_attr_val:
+                entity = pc_rs(pc_profile, **{pc_attr: pc_attr_val})
+                pc_entities.append(entity)
+        pc_entities.append(infra.RsAttEntP(pc_profile, tDn=aep.dn))
+
+        self.apic.commit(aep_entities + pc_entities)
 
     def create_subnet(self, subnet, external, address_scope_name):
         self._configure_subnet(subnet, external=external, address_scope_name=address_scope_name,
@@ -468,11 +478,7 @@ class CobraManager(object):
             for binding in network.get('bindings', []):
                 host_config = binding['host_config']
                 if host_config:
-                    encap_mode = "regular"
-                    encap = binding['encap']
-                    if host_config['bm_mode'] != ACI_BM_NONE and encap is None:
-                        encap_mode = "untagged"
-                        encap = 1
+                    encap_mode, encap = self.get_encap_config(binding['encap'], host_config)
                     encap = self.get_static_binding_encap(binding['network_type'], encap)
 
                     for port_binding in host_config.get('bindings', []):

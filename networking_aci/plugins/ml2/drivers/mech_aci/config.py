@@ -85,33 +85,60 @@ aci_opts = [
     cfg.StrOpt('resource_prefix',
                default='openstack',
                help="Prefix baremetal resources (and others in the future) with this prefix"),
-    cfg.StrOpt('default_aep',
-               default=None,
-               help="Default AEP, if none is defined in hostgroup"),
-    cfg.StrOpt('default_lacp_policy',
-               default=None,
-               help="Default LACP policy to use. Set to empty string to clear it."),
-    cfg.StrOpt('baremetal_lacp_policy',
-               default=None,
-               help="Baremetal LACP policy to use. Set to empty string to clear it."),
-    cfg.StrOpt('default_mcp_policy',
-               default=None,
-               help="Default MCP policy to use. Set to empty string to clear it."),
-    cfg.StrOpt('baremetal_mcp_policy',
-               default=None,
-               help="Baremetal MCP policy to use. Set to empty string to clear it."),
-    cfg.StrOpt('default_l2iface_policy',
-               default=None,
-               help="Default L2 interface policy to use. Set to empty string to clear it."),
-    cfg.StrOpt('baremetal_l2iface_policy',
-               default=None,
-               help="Baremetal L2 interface policy to use. Set to empty string to clear it."),
     cfg.StrOpt('handle_port_update_for_non_baremetal',
                default=False,
                help="Port updates (e.g. binding host removed/changed) are only handled for trunk ports. "
                     "This can be enabled for all ports, but this might have unforseen sideeffects (untested)."),
+    cfg.StrOpt('default_bm_pc_profile_group',
+               help="Default config group for baremetal port-channel profile values, written as pc-policy-group:$name"
+                    " (without prefix)"),
 ]
 
+pc_profile_opts = [
+    cfg.StrOpt("lag_mode", choices=("link", "node"),
+               default="node",
+               help="Port-Channel type (link == pc, node == vpc)"),
+    cfg.StrOpt("link_level_policy",
+               default="10Gig_Link_auto",
+               help="Preprovisioned link level policy to use"),
+    cfg.StrOpt("cdp_policy",
+               default="CDP_on",
+               help="Preprovisioned CDP policy to use"),
+    cfg.StrOpt("lldp_policy",
+               default="LLDP_enable",
+               help="Preprovisioned LLDP policy to use"),
+    cfg.StrOpt("lapc_policy",
+               default="LACP_on_fast_suspend",
+               help="Preprovisioned port channel policy to use"),
+    cfg.StrOpt("mcp_policy",
+               default="",
+               help="Preprovisioned MCP policy to use"),
+    cfg.StrOpt("monitoring_policy",
+               default="SAP_SNMP",
+               help="Preprovisioned monitoring policy to use"),
+    cfg.StrOpt("l2_policy",
+               default="SAP_SNMP",
+               help="Preprovisioned l2 policy, should define VLAN local scope mode"),
+]
+
+hostgroup_opts = [
+    cfg.ListOpt('hosts', required=True,
+                help="List of hosts that this hostgroup is responsible for"),
+    cfg.ListOpt('bindings', required=True,
+                help="List of bindings that are bount to an EPG"),
+    cfg.ListOpt('physical_domain',
+                help="List of physical domains to add to an EPG"),
+    cfg.StrOpt('physical_network'),
+    cfg.StrOpt('segment_type'),
+    cfg.StrOpt('segment_range'),
+
+    # baremetal stuff
+    cfg.StrOpt('bm_mode', choices=(aci_constants.ACI_BM_CUSTOMER, aci_constants.ACI_BM_CCLOUD)),
+    cfg.StrOpt('inherit_physical_network'),
+    cfg.StrOpt('bm_pc_profile_group'),
+    cfg.StrOpt('port_profiles'),
+    cfg.StrOpt('ccloud_pc_policy_group'),
+]
 
 cli_opts = [
     cfg.StrOpt('network-id',
@@ -175,13 +202,13 @@ def create_hostgroup_dictionary():
             'bm_mode': aci_constants.ACI_BM_NONE,
         }
         for key, value in conf[host]:
-            if key in ('bindings', 'hosts', 'physical_domain'):
+            if key in ('bindings', 'hosts', 'physical_domain', 'port_profiles'):
                 d[key] = value[0].split(",")
             else:
                 d[key] = value[0]
 
         if d['bm_mode'] not in (aci_constants.ACI_BM_CUSTOMER, aci_constants.ACI_BM_CCLOUD, aci_constants.ACI_BM_NONE):
-            log.error("Unknown bm_mode '%s' set in hostgroup %s", d['bm_mode'], host)
+            LOG.error("Unknown bm_mode '%s' set in hostgroup %s", d['bm_mode'], host)
 
         if d['bm_mode'] == aci_constants.ACI_BM_CUSTOMER:
             resource_name = "{}-{}".format(CONF.ml2_aci.resource_prefix, host)
@@ -189,9 +216,30 @@ def create_hostgroup_dictionary():
             d['physical_domain'] = [resource_name]
             d['resource_name'] = resource_name
 
+            # when switching the profile of a port selector, the vpc gets renamed as well
+            new_bindings = []
+            for binding in d.get('bindings', []):
+                tokens = binding.split("/")
+                tokens[-1] = d['resource_name']
+                new_bindings.append("/".join(tokens))
+            d['bindings'] = new_bindings
+
+            bm_pc_profile_group = d.get('bm_pc_profile_group') or cfg.CONF.ml2_aci.default_bm_pc_profile_group
+            if not bm_pc_profile_group:
+                raise ValueError("No bm_pc_profile group specified for hostgroup {}".format(host))
+            bm_pc_profile_group = "pc-policy-group:{}".format(bm_pc_profile_group)
+            if bm_pc_profile_group not in cfg.CONF.list_all_sections():
+                raise ValueError("bm_pc_profile_group {} referenced by hostgroup {} does not exist"
+                                 .format(bm_pc_profile_group, host))
+            cfg.CONF.register_opts(pc_profile_opts, bm_pc_profile_group)
+            d['bm_pc_profile'] = dict(getattr(cfg.CONF, bm_pc_profile_group))
+
         host_dict[host] = d
 
+    # handle physical network inheritance for ccloud mode
     for host in host_dict:
+        if host_dict[host]['bm_mode'] != aci_constants.ACI_BM_CCLOUD:
+            continue
         inherit_physnet = host_dict[host].get('inherit_physical_network')
         if inherit_physnet:
             if inherit_physnet not in host_dict:
