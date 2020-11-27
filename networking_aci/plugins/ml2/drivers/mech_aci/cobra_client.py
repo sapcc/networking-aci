@@ -154,6 +154,27 @@ class CobraClient(object):
 
         return None
 
+    def query_dn(self, dn, subtree=None, subtree_class_filter=None, single=False):
+        dnQ = DnQuery(dn)
+        if subtree:
+            dnQ.subtree = subtree
+        if subtree:
+            dnQ.subtreeClassFilter = ",".join(subtree_class_filter)
+        result = self.mo_dir.query(dnQ)
+        if single:
+            if len(result) > 1:
+                raise ValueError("Expected single entry for dn query for {}, found {}".format(dn, len(result)))
+            return result[0]
+        return result
+
+    def get_bd(self, tenant_name, network_id):
+        dn = "uni/tn-{}/BD-{}".format(tenant_name, network_id)
+        return self.query_dn(dn, subtree="full", single=True)
+
+    def get_epg(self, tenant_name, app_profile, network_id):
+        dn = "uni/tn-{}/ap-{}/epg-{}".format(tenant_name, app_profile, network_id)
+        return self.query_dn(dn, subtree="full", subtree_class_filter=('fvRsPathAtt', 'fvRsDomAtt'), single=True)
+
     def get_or_create_tenant(self, tenant_name):
         tenant_mo = Tenant(self.uni_mo(), tenant_name)
 

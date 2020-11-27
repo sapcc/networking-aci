@@ -402,16 +402,16 @@ class CobraManager(object):
 
     def get_bd(self, network_id):
         try:
-            return self.apic.get_full_tenant(self.get_tenant_name(network_id)).BD[network_id]
-        except Exception:
+            return self.apic.get_bd(self.get_tenant_name(network_id), network_id)
+        except Exception as e:
+            LOG.debug("Could not get BD for network %s: %s %s".format(e.__class__.__name__, e))
             return None
 
     def get_epg(self, network_id):
         try:
-            app = self.get_app(network_id)
-            if app:
-                return app.epg[network_id]
-        except Exception:
+            return self.apic.get_epg(self.get_tenant_name(network_id), self.apic_application_profile, network_id)
+        except Exception as e:
+            LOG.debug("Could not get EPG for network %s: %s %s".format(e.__class__.__name__, e))
             return None
 
     def get_app(self, network_id):
