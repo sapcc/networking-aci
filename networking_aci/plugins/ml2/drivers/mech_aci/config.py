@@ -58,6 +58,10 @@ aci_opts = [
     cfg.IntOpt('sync_batch_size',
                default=10,
                help="Number of networks to process in on poll"),
+    cfg.IntOpt('reauth_threshold',
+               default=120,
+               help="Threshold when we should renew the auth token. By default the token is valid for 600s and we "
+                    "renew it 120s before it timeouts"
     cfg.BoolOpt('prune_orphans',
                 default=True,
                 help="Clean orphaned EPG and BD on ACI"),
