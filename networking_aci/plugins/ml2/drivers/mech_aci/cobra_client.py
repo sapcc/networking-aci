@@ -23,6 +23,7 @@ from cobra.mit.request import DnQuery
 from cobra.mit.session import LoginSession, LoginError
 from cobra.mit.request import QueryError
 from cobra.model.fv import Tenant
+from oslo_config import cfg
 from oslo_log import log
 import requests
 import requests.exceptions as rexc
@@ -43,7 +44,18 @@ def _retry(func):
     def wrapper(self, *args, **kwargs):
         retry = kwargs.pop("retry", 0)
         max_retries = kwargs.pop("max_retries", 3)
+
         try:
+            # check if token is still valid
+            token_validity = self.mo_dir.session.refreshTime - time.time()
+            if token_validity < cfg.CONF.ml2_aci.reauth_threshold:
+                if token_validity > 1:
+                    LOG.debug("Session only valid for %ss, refreshing auth", token_validity)
+                    self.mo_dir.reauth()
+                else:
+                    LOG.info("Session timed out (%ss), triggering relogin", token_validity)
+                    self.login()
+
             return func(self, *args, **kwargs)
         except RETRY_EXCEPTIONS as e:
             msg = ("Try {}/{}: Call to {}() failed due to {}: {}"
