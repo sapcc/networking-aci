@@ -297,14 +297,9 @@ class CobraManager(object):
         return self.apic.lookupByClass('fv.AEPg', parentDn=tenant.dn)
 
     def get_all_epgs(self):
-        result = []
-
-        for tenant_name in self.tenant_manager.all_tenant_names():
-            epgs = self.get_tenant_epgs(self.apic.get_tenant(tenant_name))
-            if len(epgs) > 0:
-                result += epgs
-
-        return result
+        """Get all EPGs managed by OpenStack"""
+        wcard = 'wcard(fvAEPg.dn, "/tn-{}")'.format(cfg.CONF.ml2_aci.tenant_prefix)
+        return self.apic.lookupByClass('fvAEPg', propFilter=wcard)
 
     def get_bd(self, network_id):
         try:
