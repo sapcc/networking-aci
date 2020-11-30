@@ -279,7 +279,7 @@ class CobraManager(object):
     def get_tenant_bridge_domains(self, tenant):
         if not tenant:
             return []
-        return self.apic.mo_dir.lookupByClass('fv.BD', parentDn=tenant.dn)
+        return self.apic.lookupByClass('fv.BD', parentDn=tenant.dn)
 
     def get_all_bridge_domains(self):
         result = []
@@ -294,7 +294,7 @@ class CobraManager(object):
     def get_tenant_epgs(self, tenant):
         if not tenant:
             return []
-        return self.apic.mo_dir.lookupByClass('fv.AEPg', parentDn=tenant.dn)
+        return self.apic.lookupByClass('fv.AEPg', parentDn=tenant.dn)
 
     def get_all_epgs(self):
         result = []
@@ -310,14 +310,14 @@ class CobraManager(object):
         try:
             return self.apic.get_bd(self.get_tenant_name(network_id), network_id)
         except Exception as e:
-            LOG.debug("Could not get BD for network %s: %s %s".format(e.__class__.__name__, e))
+            LOG.debug("Could not get BD for network %s: %s %s", network_id, e.__class__.__name__, e)
             return None
 
     def get_epg(self, network_id):
         try:
             return self.apic.get_epg(self.get_tenant_name(network_id), self.apic_application_profile, network_id)
         except Exception as e:
-            LOG.debug("Could not get EPG for network %s: %s %s".format(e.__class__.__name__, e))
+            LOG.debug("Could not get EPG for network %s: %s %s", network_id, e.__class__.__name__, e)
             return None
 
     def get_app(self, network_id):

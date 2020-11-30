@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 import collections
+import functools
 import time
 
 from cobra.mit.access import MoDirectory
@@ -33,7 +34,40 @@ RETRY_LIMIT = 2
 FALLBACK_EXCEPTIONS = (rexc.ConnectionError, rexc.Timeout,
                        rexc.TooManyRedirects, rexc.InvalidURL,
                        rexc.HTTPError, LoginError)
+RETRY_EXCEPTIONS = FALLBACK_EXCEPTIONS + (SSLError, CommitError, QueryError)
 requests.packages.urllib3.disable_warnings()
+
+
+def _retry(func):
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        retry = kwargs.pop("retry", 0)
+        max_retries = kwargs.pop("max_retries", 3)
+        try:
+            return func(self, *args, **kwargs)
+        except RETRY_EXCEPTIONS as e:
+            msg = ("Try {}/{}: Call to {}() failed due to {}: {}"
+                   .format(retry, max_retries, func.__name__, e.__class__.__name__, e))
+
+            if isinstance(e, (CommitError, QueryError)):
+                if isinstance(e, CommitError) and e.error == 102:
+                    LOG.info("%s - sleeping and retrying to avoid race condition".format(e.reason))
+                    time.sleep(1)
+                elif e.error == 403:
+                    # relogin on error 403
+                    pass
+                else:
+                    # reraise
+                    raise e
+
+            if retry < max_retries:
+                LOG.info("%s - calling login()", msg)
+                self.login()
+                return func(self, *args, retry=retry + 1, max_retries=max_retries, **kwargs)
+            else:
+                LOG.error("%s", msg)
+                raise e
+    return wrapper
 
 
 class CobraClient(object):
@@ -69,66 +103,47 @@ class CobraClient(object):
     def logout(self):
         self.mo_dir.logout()
 
-    def lookupByDn(self, dn):
-        retries = 0
-        while retries < RETRY_LIMIT:
-            try:
-                return self.mo_dir.lookupByDn(dn)
-            except SSLError as e:
-                self._retry(retries, e)
-            except QueryError as e:
-                self._retry(retries, e)
-                LOG.info("Lookup to ACI failed due to {}: {} retry {} of {}"
-                         .format(e.error, e.reason, retries, RETRY_LIMIT))
-                if e.error == 403:
-                    self.login()
-                    LOG.info("New login session created")
-                else:
-                    raise e
-            except FALLBACK_EXCEPTIONS as e:
-                self._retry(retries, e)
-                LOG.info("Lookup to ACI failed due to {}, triggering new login - retry {} of {}"
-                         .format(e, retries, RETRY_LIMIT))
-                self.login()
-            retries += 1
-
+    @_retry
     def commit(self, managed_objects):
-        retries = 0
-        while retries < RETRY_LIMIT:
-            try:
-                config_request = ConfigRequest()
+        config_request = ConfigRequest()
 
-                if isinstance(managed_objects, list):
-                    for mos in managed_objects:
-                        config_request.addMo(mos)
-                else:
-                    config_request.addMo(managed_objects)
+        if isinstance(managed_objects, list):
+            for mos in managed_objects:
+                config_request.addMo(mos)
+        else:
+            config_request.addMo(managed_objects)
 
-                return self.mo_dir.commit(config_request)
-            except SSLError as e:
-                self._retry(retries, e)
-            except CommitError as e:
-                self._retry(retries, e)
-                LOG.info("Commit to ACI failed due to {}: {} retry {} of {}"
-                         .format(e.error, e.reason, retries, RETRY_LIMIT))
-                if e.error == 403:
-                    self.login()
-                    LOG.info("New login session created")
-                elif e.error == 102:
-                    LOG.info("{} sleeping and retrying to avoid race condition".format(e.reason))
-                    time.sleep(1)
-                else:
-                    raise e
-            except FALLBACK_EXCEPTIONS as e:
-                self._retry(retries, e)
-                LOG.info("Lookup to ACI failed due to {}, triggering new login - retry {} of {}"
-                         .format(e, retries, RETRY_LIMIT))
-                self.login()
-            retries += 1
+        return self.mo_dir.commit(config_request)
 
-    def _retry(self, retries, e):
-        if retries >= RETRY_LIMIT:
-            raise e
+    @_retry
+    def lookupByDn(self, dn, **kwargs):
+        """Simple wrapper for cobra lookupByDn with retry"""
+        return self.mo_dir.lookupByDn(dn, **kwargs)
+
+    @_retry
+    def lookupByClass(self, dn, **kwargs):
+        """Simple wrapper for cobra lookupByClass with retry"""
+        return self.mo_dir.lookupByClass(dn, **kwargs)
+
+    @_retry
+    def query(self, dn, single=False, **kwargs):
+        dnQ = DnQuery(dn)
+        # allow passing a list for certain attributes
+        for item in ('subtreeClassFilter',):
+            if isinstance(kwargs.get(item), (tuple, list)):
+                kwargs[item] = ",".join(kwargs[item])
+
+        # set all query parameters, similar to DnQuery.__setQueryParams
+        for param, value in list(kwargs.items()):
+            if value is not None:
+                setattr(dnQ, param, value)
+
+        result = self.mo_dir.query(dnQ)
+        if single:
+            if len(result) > 1:
+                raise ValueError("Expected single entry for dn query for {}, found {}".format(dn, len(result)))
+            return result[0]
+        return result
 
     def mo_exists(self, dn):
         mo = self.lookupByDn(dn)
@@ -138,14 +153,7 @@ class CobraClient(object):
         return self.lookupByDn('uni')
 
     def get_full_tenant(self, tenant_name):
-        dnQ = DnQuery('uni/tn-{}'.format(tenant_name))
-        dnQ.subtree = 'full'
-        tenant = self.mo_dir.query(dnQ)
-
-        if tenant:
-            return tenant[0]
-
-        return None
+        return self.query("uni/tn-{}".format(tenant_name), subtree="full", single=True)
 
     def get_tenant(self, tenant_name):
         tenant_mo = Tenant(self.uni_mo(), tenant_name)
@@ -154,26 +162,13 @@ class CobraClient(object):
 
         return None
 
-    def query_dn(self, dn, subtree=None, subtree_class_filter=None, single=False):
-        dnQ = DnQuery(dn)
-        if subtree:
-            dnQ.subtree = subtree
-        if subtree:
-            dnQ.subtreeClassFilter = ",".join(subtree_class_filter)
-        result = self.mo_dir.query(dnQ)
-        if single:
-            if len(result) > 1:
-                raise ValueError("Expected single entry for dn query for {}, found {}".format(dn, len(result)))
-            return result[0]
-        return result
-
-    def get_bd(self, tenant_name, network_id):
+    def get_bd(self, tenant_name, network_id, children=('fvSubnet',)):
         dn = "uni/tn-{}/BD-{}".format(tenant_name, network_id)
-        return self.query_dn(dn, subtree="full", single=True)
+        return self.query(dn, subtree="full", subtreeClassFilter=children, single=True)
 
-    def get_epg(self, tenant_name, app_profile, network_id):
+    def get_epg(self, tenant_name, app_profile, network_id, children=('fvRsPathAtt', 'fvRsDomAtt')):
         dn = "uni/tn-{}/ap-{}/epg-{}".format(tenant_name, app_profile, network_id)
-        return self.query_dn(dn, subtree="full", subtree_class_filter=('fvRsPathAtt', 'fvRsDomAtt'), single=True)
+        return self.query(dn, subtree="full", subtreeClassFilter=children, single=True)
 
     def get_or_create_tenant(self, tenant_name):
         tenant_mo = Tenant(self.uni_mo(), tenant_name)

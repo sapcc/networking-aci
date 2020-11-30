@@ -161,7 +161,10 @@ class ConsistencyCheck(object):
                     self.epg_config['rsCons'].append(rscons.tnVzBrCPName)
 
     def check_bd(self):
-        self.bd = self.aci_manager.get_bd(self.network_id)
+        tenant_name = self.aci_manager.get_tenant_name(self.network_id)
+        self.bd = self.aci_manager.apic.get_bd(tenant_name, self.network_id,
+                                               subtreeClassFilter=("fvSubnet", "fvRsCtx", "fvRsBDToOut",
+                                                                   "fvRsBDSubnetToOut"))
 
         # Check required attributes
         if self.bd:
