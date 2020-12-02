@@ -154,6 +154,8 @@ class CobraClient(object):
         if single:
             if len(result) > 1:
                 raise ValueError("Expected single entry for dn query for {}, found {}".format(dn, len(result)))
+            if not result:
+                return None
             return result[0]
         return result
 
