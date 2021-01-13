@@ -75,7 +75,7 @@ def _retry(func):
             if retry < max_retries:
                 LOG.info("%s - calling login()", msg)
                 self.login()
-                return func(self, *args, retry=retry + 1, max_retries=max_retries, **kwargs)
+                return wrapper(self, *args, retry=retry + 1, max_retries=max_retries, **kwargs)
             else:
                 LOG.error("%s", msg)
                 raise e
