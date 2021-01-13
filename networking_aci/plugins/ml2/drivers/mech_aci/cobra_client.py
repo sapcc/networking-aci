@@ -179,7 +179,7 @@ class CobraClient(object):
         return mo is not None
 
     def uni_mo(self):
-        return self.lookupByDn('uni')
+        return 'uni'
 
     def get_full_tenant(self, tenant_name):
         return self.query("uni/tn-{}".format(tenant_name), subtree="full", single=True)
