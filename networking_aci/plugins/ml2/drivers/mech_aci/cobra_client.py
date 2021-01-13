@@ -14,6 +14,7 @@
 #    under the License.
 import collections
 import functools
+import threading
 import time
 
 from cobra.mit.access import MoDirectory
@@ -37,6 +38,7 @@ FALLBACK_EXCEPTIONS = (rexc.ConnectionError, rexc.Timeout,
                        rexc.HTTPError, LoginError)
 RETRY_EXCEPTIONS = FALLBACK_EXCEPTIONS + (SSLError, CommitError, QueryError)
 requests.packages.urllib3.disable_warnings()
+_TOKEN_REFRESH_LOCK = threading.Lock()
 
 
 def _retry(func):
@@ -49,35 +51,48 @@ def _retry(func):
             # check if token is still valid
             token_validity = (self.mo_dir.session.refreshTime or 0) - time.time()
             if token_validity < cfg.CONF.ml2_aci.reauth_threshold:
-                if token_validity > 1:
-                    LOG.debug("Session only valid for %ss, refreshing auth", token_validity)
-                    self.mo_dir.reauth()
-                else:
-                    LOG.info("Session timed out (%ss), triggering relogin", token_validity)
-                    self.login()
+                LOG.debug("Acquiring session refresh lock")
+                with _TOKEN_REFRESH_LOCK:
+                    if token_validity >= cfg.CONF.ml2_aci.reauth_threshold:
+                        LOG.debug("Session was already refreshed by another thread, continuing")
+                    elif token_validity > 1:
+                        LOG.debug("Session only valid for %ss, refreshing auth", token_validity)
+                        self.mo_dir.reauth()
+                    else:
+                        LOG.info("Session timed out (%ss), triggering relogin", token_validity)
+                        self.login()
+                LOG.debug("Releasing session refresh lock")
 
             return func(self, *args, **kwargs)
         except RETRY_EXCEPTIONS as e:
             msg = ("Try {}/{}: Call to {}() failed due to {}: {}"
                    .format(retry, max_retries, func.__name__, e.__class__.__name__, e))
 
+            trigger_login = True
             if isinstance(e, (CommitError, QueryError)):
                 if isinstance(e, CommitError) and e.error == 102:
-                    LOG.info("%s - sleeping and retrying to avoid race condition".format(e.reason))
+                    LOG.warning("%s - sleeping and retrying to avoid race condition", e.reason)
+                    trigger_login = False
                     time.sleep(1)
                 elif e.error == 403:
                     # relogin on error 403
                     pass
                 else:
                     # reraise
+                    LOG.exception("Commit failed")
                     raise e
 
             if retry < max_retries:
-                LOG.info("%s - calling login()", msg)
-                self.login()
+                if trigger_login:
+                    LOG.info("%s - calling login()", msg)
+                    LOG.debug("Acquiring session refresh lock for login")
+                    with _TOKEN_REFRESH_LOCK:
+                        self.login()
+                    LOG.debug("Releasing session refresh lock for login")
+
                 return wrapper(self, *args, retry=retry + 1, max_retries=max_retries, **kwargs)
             else:
-                LOG.error("%s", msg)
+                LOG.exception("%s", msg)
                 raise e
     return wrapper
 
@@ -95,11 +110,11 @@ class CobraClient(object):
         self.login()
 
     def login(self):
-        # TODO handle multiple hosts
-        LOG.info("ACI Login")
+        # NOTE: login() is called by _retry(). To avoid deadlocks it should not call any methods that trigger a _retry()
 
         for x in range(len(self.api_base)):
             try:
+                LOG.info("ACI Login: Logging into %s as user %s", self.api_base[0], self.user)
                 login_session = LoginSession(self.api_base[0], self.user, self.password)
                 self.mo_dir = MoDirectory(login_session)
                 self.mo_dir.login()
