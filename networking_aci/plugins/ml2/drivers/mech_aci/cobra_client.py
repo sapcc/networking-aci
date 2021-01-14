@@ -80,7 +80,7 @@ def _retry(func):
                 else:
                     # reraise
                     LOG.exception("Commit failed")
-                    raise e
+                    raise
 
             if retry < max_retries:
                 if trigger_login:
@@ -93,7 +93,7 @@ def _retry(func):
                 return wrapper(self, *args, retry=retry + 1, max_retries=max_retries, **kwargs)
             else:
                 LOG.exception("%s", msg)
-                raise e
+                raise
     return wrapper
 
 
