@@ -15,7 +15,6 @@
 import random
 
 from neutron.db import api as db_api
-from neutron_lib.db import model_base
 from neutron.db.models import segment as ml2_models
 from neutron.plugins.ml2 import models
 from oslo_config import cfg
@@ -26,27 +25,10 @@ from six import moves
 import sqlalchemy as sa
 
 from networking_aci._i18n import _LI
+from networking_aci.db.models import AllocationsModel
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import NoAllocationFoundInMaximumAllowedAttempts
 
 LOG = log.getLogger(__name__)
-
-
-class AllocationsModel(model_base.BASEV2):
-    __tablename__ = 'aci_port_binding_allocations'
-
-    host = sa.Column(sa.String(255), nullable=False, primary_key=True)
-    level = sa.Column(sa.Integer(), nullable=False, primary_key=True)
-    segment_type = sa.Column(sa.String(255), nullable=False, primary_key=True)
-    segmentation_id = sa.Column(sa.Integer(), nullable=False, primary_key=True)
-    segment_id = sa.Column(sa.String(36), sa.ForeignKey('networksegments.id', ondelete='SET NULL'), nullable=True)
-    network_id = sa.Column(sa.String(36), sa.ForeignKey('networks.id', ondelete='SET NULL'), nullable=True)
-
-    __table_args__ = (
-        sa.UniqueConstraint(
-            host, level, segment_type, network_id,
-            name='restrict_one_segment_per_host_level_segtype_network'),
-        model_base.BASEV2.__table_args__
-    )
 
 
 class AllocationsManager(object):
