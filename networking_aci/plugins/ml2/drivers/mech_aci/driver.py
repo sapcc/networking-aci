@@ -26,6 +26,7 @@ from networking_aci._i18n import _LI, _LW
 from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import common
+from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 import rpc_api
 
 LOG = logging.getLogger(__name__)
@@ -36,9 +37,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         LOG.info(_LI("ACI mechanism driver initializing..."))
         self.topic = None
         self.conn = None
-        self.network_config = common.get_network_config()
-        self.host_group_config = self.network_config['hostgroup_dict']
-        self.allocations_manager = allocations.AllocationsManager(self.network_config)
+        self.allocations_manager = allocations.AllocationsManager()
 
         self.db = common.DBPlugin()
         self.context = context.get_admin_context_without_session()
@@ -76,7 +75,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             host = switch
 
         LOG.info("Using binding host %s for binding port %s", host, port['id'])
-        host_group_name, host_config = self._host_or_host_group(host)
+        host_group_name, host_config = ACI_CONFIG.get_hostgroup_by_host(host)
 
         if not host_config:
             return False
@@ -177,7 +176,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         if switch:
             host = switch
-        _, host_config = self._host_or_host_group(host)
+        _, host_config = ACI_CONFIG.get_hostgroup_by_host(host)
 
         if not host_config:
             return False
@@ -213,7 +212,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                                      .distinct())
 
         for other_binding in other_bindings:
-            _, other_binding_host_config = self._host_or_host_group(other_binding.host)
+            _, other_binding_host_config = ACI_CONFIG.get_hostgroup_by_host(other_binding.host)
             other_physdoms = set(other_binding_host_config['physical_domain'])
             for physdom in clearable & other_physdoms:
                 LOG.debug("Not clearing physdom %s from epg %s for segment %s as it is still in use by segment %s",
@@ -227,9 +226,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                   len(clearable), network['id'], local_segment['id'], ", ".join(clearable) or "<none>")
 
         return list(clearable)
-
-    def _host_or_host_group(self, host_id):
-        return common.get_host_or_host_group(host_id, self.host_group_config)
 
     @staticmethod
     def switch_from_local_link(binding_profile):

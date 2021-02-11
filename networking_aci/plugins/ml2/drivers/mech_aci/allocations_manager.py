@@ -21,20 +21,20 @@ from oslo_config import cfg
 from oslo_db import exception as db_exc
 from oslo_log import log
 from oslo_utils import uuidutils
-from six import moves
 import sqlalchemy as sa
 
 from networking_aci._i18n import _LI
 from networking_aci.db.models import AllocationsModel
+from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import NoAllocationFoundInMaximumAllowedAttempts
 
 LOG = log.getLogger(__name__)
+CONF = cfg.CONF
 
 
 class AllocationsManager(object):
-    def __init__(self, network_config):
-        self.hostgroup_config = network_config['hostgroup_dict']
-        if cfg.CONF.ml2_aci.sync_allocations:
+    def __init__(self):
+        if CONF.ml2_aci.sync_allocations:
             self._sync_allocations()
 
     def initialize(self):
@@ -190,7 +190,7 @@ class AllocationsManager(object):
                       filter_by(segment_id=segment_id, level=level))
 
             if select.count() == 0:
-                segmentation_ids = self._segmentation_ids(host_config)
+                segmentation_ids = host_config['segment_range'].copy()
                 inside = segmentation_id in segmentation_ids
                 query = (session.query(AllocationsModel).
                          filter_by(network_id=network_id, level=level, segment_type=segment_type,
@@ -213,16 +213,6 @@ class AllocationsManager(object):
     def _allocation_key(self, host_id, level, segment_type):
         return "{}_{}_{}".format(host_id, level, segment_type)
 
-    @staticmethod
-    def _segmentation_ids(host_config):
-        segment_ranges = []
-        for segment in host_config['segment_range'].split(','):
-            segment_range_str = segment.strip().split(':')
-            segment_range = moves.range(int(segment_range_str[0]), int(segment_range_str[1]) + 1)
-            segment_ranges.extend(segment_range)
-
-        return set(segment_ranges)
-
     def _sync_allocations(self):
         LOG.info("Preparing ACI Allocations table")
         level = 1  # Currently only supporting one level in hierarchy
@@ -241,7 +231,7 @@ class AllocationsManager(object):
                 allocations[alloc_key].add(alloc)
 
             # process segment ranges for each configured hostgroup
-            for hostgroup, hostgroup_config in self.hostgroup_config.iteritems():
+            for hostgroup, hostgroup_config in ACI_CONFIG.hostgroups.items():
                 self._process_host_or_hostgroup(session, hostgroup, hostgroup_config, allocations, level)
 
         # remove from table unallocated vlans for any unconfigured
@@ -260,7 +250,7 @@ class AllocationsManager(object):
 
     def _process_host_or_hostgroup(self, session, host, host_config, allocations, level):
         segment_type = host_config['segment_type']
-        segmentation_ids = self._segmentation_ids(host_config)
+        segmentation_ids = host_config['segment_range'].copy()
         alloc_key = self._allocation_key(host, level, segment_type)
         if alloc_key in allocations:
             for alloc in allocations[alloc_key]:

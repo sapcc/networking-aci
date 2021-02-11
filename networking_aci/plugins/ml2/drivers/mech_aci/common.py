@@ -21,8 +21,6 @@ from neutron.db import segments_db as ml2_db
 from neutron.plugins.ml2 import models as ml2_models
 from oslo_log import log as logging
 
-from networking_aci.plugins.ml2.drivers.mech_aci import config
-
 LOG = logging.getLogger(__name__)
 
 
@@ -70,22 +68,6 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             return
 
         return scope.get('name')
-
-
-def get_network_config():
-    return {
-            'hostgroup_dict': config.create_hostgroup_dictionary(),
-            'address_scope_dict': config.create_addressscope_dictionary(),
-            'fixed_bindings_dict': config.create_fixed_bindings_dictionary()
-           }
-
-
-def get_host_or_host_group(host_id, host_group_config):
-    for hostgroup, hostgroup_config in host_group_config.iteritems():
-        if host_id in hostgroup_config['hosts']:
-            return hostgroup, hostgroup_config
-
-    return host_id, None
 
 
 def get_segments(context, network_id):

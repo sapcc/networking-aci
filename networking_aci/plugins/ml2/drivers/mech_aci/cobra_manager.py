@@ -23,9 +23,11 @@ from oslo_config import cfg
 from oslo_log import log
 
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_client
+from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 
 
 LOG = log.getLogger(__name__)
+CONF = cfg.CONF
 
 ENCAP_VLAN = 'vlan-%s'
 PORT_DN_PATH = 'topology/%s/paths-%s/pathep-[eth%s/%s]'
@@ -35,22 +37,17 @@ NODE_DN_PATH = 'topology/%s/paths-%s/pathep-[Switch%s_%s-ports-%s_PolGrp]'
 
 
 class CobraManager(object):
-    def __init__(self, agent_plugin, network_config, aci_config, tenant_manager):
+    def __init__(self, agent_plugin, tenant_manager):
         # Connect to the APIC
 
         self.agent_plugin = agent_plugin
-        self.aci_config = aci_config
-        self.apic_application_profile = aci_config.apic_application_profile
-        self.tenant_default_vrf = aci_config.tenant_default_vrf
-        self.network_config = network_config
+        self.apic_application_profile = CONF.ml2_aci.apic_application_profile
+        self.tenant_default_vrf = CONF.ml2_aci.tenant_default_vrf
 
-        self.host_dict = network_config.get('host_dict', {})
-        self.address_scope_dict = network_config.get('address_scope_dict', {})
-
-        self.apic = cobra_client.CobraClient(self.aci_config.apic_hosts,
-                                             self.aci_config.apic_username,
-                                             self.aci_config.apic_password,
-                                             self.aci_config.apic_use_ssl)
+        self.apic = cobra_client.CobraClient(CONF.ml2_aci.apic_hosts,
+                                             CONF.ml2_aci.apic_username,
+                                             CONF.ml2_aci.apic_password,
+                                             CONF.ml2_aci.apic_use_ssl)
 
         self.context = context.get_admin_context()
         self.tenant_manager = tenant_manager
@@ -88,12 +85,12 @@ class CobraManager(object):
             unicast_route = 1
             move_detect = 1
             limit_ip_learn_subnets = 1
-            ep_retention_policy = cfg.CONF.ml2_aci.ep_retention_policy_net_external
+            ep_retention_policy = CONF.ml2_aci.ep_retention_policy_net_external
         else:
             unicast_route = 0
             move_detect = 0
             limit_ip_learn_subnets = 0
-            ep_retention_policy = cfg.CONF.ml2_aci.ep_retention_policy_net_internal
+            ep_retention_policy = CONF.ml2_aci.ep_retention_policy_net_internal
 
         bd_opts = {
             'arpFlood': 1,
@@ -103,7 +100,7 @@ class CobraManager(object):
             'limitIpLearnToSubnets': limit_ip_learn_subnets
         }
 
-        if self.aci_config.support_remote_mac_clear:
+        if CONF.ml2_aci.support_remote_mac_clear:
             bd_opts['epClear'] = 1
 
         bd = fv.BD(tenant, network_id, **bd_opts)
@@ -192,7 +189,7 @@ class CobraManager(object):
         subnet = fv.Subnet(bd, gateway, scope=scope_config.get('scope', 'public'), ctrl='querier')
         subnet_outs = []
 
-        for l3_out in l3_outs.split(','):
+        for l3_out in l3_outs:
             out = self._find_l3_out(network_id, l3_out)
 
             if out:
@@ -240,7 +237,7 @@ class CobraManager(object):
         # out_profile  = RsBDToProfile(bd,tnL3extOutName=l3_out_name)
         vrf = fv.RsCtx(bd, vrf_name, tnFvCtxName=vrf_name)
         bd_outs = []
-        for l3_out in l3_outs.split(','):
+        for l3_out in l3_outs:
             out = self._find_l3_out(network_id, l3_out)
             if out:
                 bd_out = fv.RsBDToOut(bd, out.name)
@@ -298,7 +295,7 @@ class CobraManager(object):
 
     def get_all_epgs(self):
         """Get all EPGs managed by OpenStack"""
-        wcard = 'wcard(fvAEPg.dn, "/tn-{}")'.format(cfg.CONF.ml2_aci.tenant_prefix)
+        wcard = 'wcard(fvAEPg.dn, "/tn-{}")'.format(CONF.ml2_aci.tenant_prefix)
         return self.apic.lookupByClass('fvAEPg', propFilter=wcard)
 
     def get_bd(self, network_id):
@@ -423,13 +420,11 @@ class CobraManager(object):
         return gateway_ip
 
     def _get_address_scope_config(self, address_scope_name):
-
-        if address_scope_name not in self.address_scope_dict:
+        scope_config = ACI_CONFIG.get_address_scope_by_name(address_scope_name)
+        if scope_config is None:
             raise Exception("No address scope configuration found for address scope pool {} "
                             "no external configuration can be processed on ACI without configuration"
                             .format(address_scope_name))
-
-        scope_config = self.address_scope_dict[address_scope_name]
 
         return scope_config
 

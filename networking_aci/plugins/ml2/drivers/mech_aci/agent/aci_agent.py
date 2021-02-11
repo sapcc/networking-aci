@@ -19,7 +19,6 @@ import time
 from neutron_lib import constants as n_const
 from neutron_lib import context
 from neutron.agent import rpc as agent_rpc
-from neutron.common import config
 from neutron.common import topics
 from neutron.db import db_base_plugin_v2 as db
 from oslo_config import cfg
@@ -31,7 +30,6 @@ from stevedore import driver
 
 from networking_aci._i18n import _LI, _LE
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_manager
-from networking_aci.plugins.ml2.drivers.mech_aci import config as aci_config
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
 
@@ -48,54 +46,38 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                  conf=None,
                  aci_monitor_respawn_interval=(
                          aci_constants.DEFAULT_ACI_RESPAWN)):
-
-        self.conf = aci_config.CONF
-
-        self.aci_config = self.conf.ml2_aci
-
-        self.fixed_bindings = aci_config.create_fixed_bindings_dictionary()
-
-        self.network_config = {
-            'hostgroup_dict': aci_config.create_hostgroup_dictionary(),
-            'address_scope_dict': aci_config.create_addressscope_dictionary(),
-            'fixed_bindings_dict': self.fixed_bindings
-        }
-
-        self.host_group_config = self.network_config['hostgroup_dict']
-        self.tenant_manager = driver.DriverManager(namespace='aci.tenant.managers', name=self.aci_config.tenant_manager,
+        self.tenant_manager = driver.DriverManager(namespace='aci.tenant.managers', name=CONF.ml2_aci.tenant_manager,
                                                    invoke_on_load=True).driver
 
         self.db = db.NeutronDbPluginV2()
 
         self.aci_monitor_respawn_interval = aci_monitor_respawn_interval
         self.minimize_polling = minimize_polling,
-        self.polling_interval = self.aci_config.polling_interval
-        self.sync_batch_size = self.aci_config.sync_batch_size
+        self.polling_interval = CONF.ml2_aci.polling_interval
+        self.sync_batch_size = CONF.ml2_aci.sync_batch_size
         self.sync_marker = ""
 
-        self.sync_active = self.aci_config.sync_active
-        self.prune_orphans = self.aci_config.prune_orphans
+        self.sync_active = CONF.ml2_aci.sync_active
+        self.prune_orphans = CONF.ml2_aci.prune_orphans
         self.iter_num = 0
         self.run_daemon_loop = True
         self.quitting_rpc_timeout = quitting_rpc_timeout
         self.catch_sigterm = False
         self.catch_sighup = False
 
-        host = self.conf.host
-        self.agent_id = 'aci-agent-%s' % host
+        self.agent_id = 'aci-agent-%s' % CONF.host
 
         self.setup_rpc()
 
         self.agent_state = {
             'binary': 'neutron-aci-agent',
-            'host': host,
+            'host': CONF.host,
             'topic': n_const.L2_AGENT_TOPIC,
             'configurations': {},
             'agent_type': aci_constants.ACI_AGENT_TYPE,
             'start_flag': True}
 
-        self.aci_manager = cobra_manager.CobraManager(self.agent_rpc, self.network_config, self.aci_config,
-                                                      self.tenant_manager)
+        self.aci_manager = cobra_manager.CobraManager(self.agent_rpc, self.tenant_manager)
         self.connection.consume_in_threads()
 
     # Start RPC callbacks

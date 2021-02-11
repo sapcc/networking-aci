@@ -81,6 +81,41 @@ aci_opts = [
                     "If unset the attribute is left untouched."),
 ]
 
+hostgroup_opts = [
+    cfg.ListOpt('hosts', required=True,
+                help="List of hosts that this hostgroup is responsible for"),
+    cfg.ListOpt('bindings', required=True,
+                help="List of bindings that are bound to an EPG (VPCs/PCs)"),
+    cfg.ListOpt('physical_domain',
+                help="List of physical domains to add to an EPG"),
+    cfg.StrOpt('physical_network',
+               help="Name of the physical network / segment identifier. This basically defines the VLAN pool name"),
+    cfg.StrOpt('segment_type',
+               help="Segment type, currently only vlan is supported"),
+    cfg.ListOpt('segment_range',
+                help="Vlan/segment range to use, specified as from:to. Can have multiple entries separated by ','"),
+]
+
+fixed_binding_opts = [
+    cfg.StrOpt('description'),
+    cfg.ListOpt('bindings', required=True,
+                help="List of bindings that are bound to an EPG (VPCs/PCs)"),
+    cfg.ListOpt('physical_domain',
+                help="List of physical domains to add to an EPG"),
+    cfg.StrOpt('segment_type',
+               help="Segment type, currently only vlan is supported"),
+    cfg.IntOpt('segment_id',
+               help="VLAN/segment id to use for this binding"),
+]
+
+address_scope_opts = [
+    cfg.ListOpt('l3_outs', required=True,
+                help="List of l3outs for this address scope"),
+    cfg.StrOpt('contracts', required=True,
+               help="Contract data structure, e.g. {'consumed':['foo'],'provided':['foo']}"),
+    cfg.StrOpt('vrf', required=True,
+               help="VRF name of this address scope"),
+]
 
 cli_opts = [
     cfg.StrOpt('network-id',
@@ -95,54 +130,80 @@ CONF = cfg.CONF
 # CONF()
 
 
-def _get_specific_config(prefix):
-    """retrieve config in the format [<label>:<key>]."""
-    conf_dict = {}
-    multi_parser = cfg.MultiConfigParser()
-    multi_parser.read(cfg.CONF.config_file)
-    for parsed_file in multi_parser.parsed:
-        for parsed_item in parsed_file.keys():
-            if parsed_item.startswith(prefix):
-                label, key = parsed_item.split(':')
-                if label.lower() == prefix:
-                    conf_dict[key] = parsed_file[parsed_item].items()
-    return conf_dict
+class ACIConfig:
+    def __init__(self):
+        self.reset_config()
+
+    def reset_config(self):
+        self._hostgroups = {}
+        self._fixed_bindings = {}
+        self._address_scopes = {}
+
+    @property
+    def hostgroups(self):
+        if not self._hostgroups:
+            self._parse_hostgroups()
+        return self._hostgroups
+
+    @property
+    def fixed_bindings(self):
+        if not self._fixed_bindings:
+            self._parse_fixed_bindings()
+        return self._fixed_bindings
+
+    @property
+    def address_scopes(self):
+        if not self._address_scopes:
+            self._parse_address_scopes()
+        return self._address_scopes
+
+    def _parse_config(self, section_prefix, opts, to_dict=False):
+        data = {}
+        section_prefix = "{}:".format(section_prefix)
+        for section in cfg.CONF.list_all_sections():
+            if not section.startswith(section_prefix):
+                continue
+            cfg.CONF.register_opts(opts, section)
+            # FIXME: maybe we could use the parsed version in the future, would be nice
+            sec_cfg = getattr(cfg.CONF, section)
+            if to_dict:
+                sec_cfg = dict(sec_cfg)
+            key = section[len(section_prefix):]
+            data[key] = sec_cfg
+            # FIXME: sanity checks
+
+        return data
+
+    def _parse_hostgroups(self):
+        # FIXME: maybe we could use the parsed version in the future, would be nice
+        # FIXME: sanity checks
+        self._hostgroups = self._parse_config("aci-hostgroup", hostgroup_opts, to_dict=True)
+
+        for hostgroup in self._hostgroups.values():
+            segment_ranges = hostgroup['segment_range']
+            full_range = set()
+            for segment_range in segment_ranges:
+                seg_from, seg_to = segment_range.split(":")
+                full_range |= set(range(int(seg_from), int(seg_to) + 1))
+            hostgroup['segment_range'] = full_range
+
+    def _parse_fixed_bindings(self):
+        self._fixed_bindings = self._parse_config("fixed-binding", fixed_binding_opts, to_dict=True)
+
+    def _parse_address_scopes(self):
+        self._address_scopes = self._parse_config("address-scope", address_scope_opts, to_dict=True)
+
+    def get_hostgroup_by_host(self, host_id):
+        for hostgroup, hostgroup_config in self.hostgroups.items():
+            if host_id in hostgroup_config['hosts']:
+                return hostgroup, hostgroup_config
+        return host_id, None
+
+    def get_fixed_binding_by_tag(self, tag):
+        return self.fixed_bindings.get(tag)
+
+    def get_address_scope_by_name(self, name):
+        return self.address_scopes.get(name)
 
 
-def create_fixed_bindings_dictionary():
-    fixed_bindings_dict = {}
-    conf = _get_specific_config('fixed-binding')
-    for network_tag in conf:
-        fixed_bindings_dict[network_tag] = {}
-        for key, value in conf[network_tag]:
-            if key in ('bindings', 'physical_domain'):
-                fixed_bindings_dict[network_tag][key] = value[0].split(",")
-            else:
-                fixed_bindings_dict[network_tag][key] = value[0]
-
-    return fixed_bindings_dict
-
-
-def create_addressscope_dictionary():
-    scope_dict = {}
-    conf = _get_specific_config('address-scope')
-    for scope_id in conf:
-        scope_dict[scope_id] = {}
-        for key, value in conf[scope_id]:
-            scope_dict[scope_id][key] = value[0]
-
-    return scope_dict
-
-
-def create_hostgroup_dictionary():
-    host_dict = {}
-    conf = _get_specific_config('aci-hostgroup')
-    for host in conf:
-        host_dict[host] = {}
-        for key, value in conf[host]:
-            if key in ('bindings', 'hosts', 'physical_domain'):
-                host_dict[host][key] = value[0].split(",")
-            else:
-                host_dict[host][key] = value[0]
-
-    return host_dict
+ACI_CONFIG = ACIConfig()

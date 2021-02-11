@@ -27,6 +27,7 @@ from sqlalchemy.orm import exc as orm_exc
 
 import driver
 from networking_aci.plugins.ml2.drivers.mech_aci import common
+from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
 
 LOG = logging.getLogger(__name__)
@@ -62,13 +63,7 @@ class AgentRpcCallback(object):
 
     @log_helpers.log_method_call
     def get_binding_count(self, rpc_context):
-        network_config = common.get_network_config()
-        bindings = network_config.get("hostgroup_dict", {})
-        host_groups = bindings.keys()
-        fixed_bindings = network_config.get("fixed_bindings_dict", {})
-        fixed_binding_networks = fixed_bindings.keys()
-
-        return len(host_groups) + len(fixed_binding_networks)
+        return len(ACI_CONFIG.hostgroups) + len(ACI_CONFIG.fixed_bindings)
 
     @log_helpers.log_method_call
     def get_network(self, rpc_context, network_id):
@@ -101,8 +96,6 @@ class AgentRpcCallback(object):
     def _get_network(self, network):
         start = time.time()
         network_id = network.get('id')
-        host_group_config = common.get_network_config()['hostgroup_dict']
-        fixed_binding_config = common.get_network_config()['fixed_bindings_dict']
         segments = common.get_segments(self.context, network_id)
 
         try:
@@ -113,7 +106,7 @@ class AgentRpcCallback(object):
 
         network_fixed_bindings = []
         for tag in tags:
-            network_fixed_binding = fixed_binding_config.get(tag, None)
+            network_fixed_binding = ACI_CONFIG.get_fixed_binding_by_tag(tag)
             if network_fixed_binding:
                 network_fixed_bindings.append(network_fixed_binding)
 
@@ -166,7 +159,7 @@ class AgentRpcCallback(object):
                         config_host = switch
 
                 binding_levels = ml2_db.get_binding_levels(self.context, port['id'], binding_host)
-                host_id, host_config = common.get_host_or_host_group(config_host, host_group_config)
+                host_id, host_config = ACI_CONFIG.get_hostgroup_by_host(config_host)
 
                 if binding_levels:
                     # for now we use binding level one
