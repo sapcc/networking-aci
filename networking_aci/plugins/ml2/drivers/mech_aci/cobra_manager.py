@@ -324,6 +324,27 @@ class CobraManager(object):
     def get_tenant_name(self, network_id):
         return self.tenant_manager.get_tenant_name(network_id)
 
+    def sync_network(self, network):
+        self.clean_subnets(network)
+        self.clean_physdoms(network)
+        self.clean_bindings(network)
+        self.ensure_domain_and_epg(network.get('id'), external=network.get('router:external'))
+
+        for subnet in network.get('subnets'):
+            self.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
+
+        for binding in network.get('bindings'):
+            if binding.get('host_config'):
+                self.ensure_static_bindings_configured(network.get('id'),
+                                                       binding.get('host_config'),
+                                                       encap=binding.get('encap'))
+            else:
+                LOG.warning("No host configuration found in binding %s", binding)
+
+        for fixed_binding in network.get('fixed_bindings'):
+            encap = fixed_binding.get('segment_id', None)
+            self.ensure_static_bindings_configured(network.get('id'), fixed_binding, encap=encap)
+
     def clean_subnets(self, network):
         network_id = network['id']
         bd = self.get_bd(network_id)
