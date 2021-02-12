@@ -147,13 +147,6 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
             LOG.info(_LI("Agent caught SIGTERM, quitting daemon loop."))
             self.run_daemon_loop = False
             self.catch_sigterm = False
-        if self.catch_sighup:
-            LOG.info(_LI("Agent caught SIGHUP, resetting."))
-            self.conf.reload_config_files()
-            config.setup_logging()
-            LOG.debug('Full set of CONF:')
-            self.conf.log_opt_values(LOG, logging.DEBUG)
-            self.catch_sighup = False
         return self.run_daemon_loop
 
     def _handle_sigterm(self, signum, frame):
