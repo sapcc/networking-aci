@@ -12,6 +12,8 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import ast
+
 from oslo_config import cfg
 
 DEFAULT_ROOT_HELPER = ('sudo /usr/local/bin/neutron-rootwrap '
@@ -111,8 +113,12 @@ fixed_binding_opts = [
 address_scope_opts = [
     cfg.ListOpt('l3_outs', required=True,
                 help="List of l3outs for this address scope"),
-    cfg.StrOpt('contracts', required=True,
+    cfg.StrOpt('contracts',
                help="Contract data structure, e.g. {'consumed':['foo'],'provided':['foo']}"),
+    cfg.ListOpt('consumed_contracts',
+                help="Consumed contracts for this scope. Contracts from the contracts option will be added as well."),
+    cfg.ListOpt('provided_contracts',
+                help="Provided contracts for this scope. Contracts from the contracts option will be added as well."),
     cfg.StrOpt('vrf', required=True,
                help="VRF name of this address scope"),
 ]
@@ -192,6 +198,12 @@ class ACIConfig:
 
     def _parse_address_scopes(self):
         self._address_scopes = self._parse_config("address-scope", address_scope_opts, to_dict=True)
+
+        for scope in self._address_scopes:
+            if scope.get('contracts'):
+                contracts = ast.literal_eval(scope.get('contracts'))
+                scope['consumed_contracts'].extend(contracts['consumed'])
+                scope['provided_contracts'].extend(contracts['provided'])
 
     def get_hostgroup_by_host(self, host_id):
         for hostgroup, hostgroup_config in self.hostgroups.items():

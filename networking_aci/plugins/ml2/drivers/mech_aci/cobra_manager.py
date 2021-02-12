@@ -12,8 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-import ast
-
 from cobra.model import fv
 from cobra.model import phys
 from cobra import modelimpl
@@ -255,21 +253,17 @@ class CobraManager(object):
         epg = fv.AEPg(app, network_id)
 
         epg_contracts = []
+        for consumed in scope_config['consumed_contracts']:
+            contract = fv.RsCons(epg, consumed)
+            if delete and last_on_network:
+                contract.delete()
+            epg_contracts.append(contract)
 
-        contract_def = ast.literal_eval(scope_config['contracts'])
-        for contract_type, contracts in contract_def.iteritems():
-            if contract_type == 'consumed':
-                for contract in contracts:
-                    contract = fv.RsCons(epg, contract)
-                    if delete and last_on_network:
-                        contract.delete()
-                    epg_contracts.append(contract)
-            elif contract_type == 'provided':
-                for contract in contracts:
-                    contract = fv.RsProv(epg, contract)
-                    if delete and last_on_network:
-                        contract.delete()
-                    epg_contracts.append(contract)
+        for provided in scope_config['provided_contracts']:
+            contract = fv.RsCons(epg, provided)
+            if delete and last_on_network:
+                contract.delete()
+            epg_contracts.append(contract)
 
         self.apic.commit([vrf] + bd_outs + epg_contracts)
 
