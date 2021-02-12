@@ -25,7 +25,6 @@ from oslo_log import helpers as log_helpers
 import oslo_messaging
 from sqlalchemy.orm import exc as orm_exc
 
-import driver
 from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
@@ -154,7 +153,7 @@ class AgentRpcCallback(object):
             if binding_host not in processed_hosts:
                 binding_profile = port_binding.get('profile')
                 if binding_profile:
-                    switch = driver.CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
+                    switch = common.get_switch_from_local_link(binding_profile)
                     if switch:
                         config_host = switch
 

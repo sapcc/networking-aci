@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-import ast
-
 from neutron_lib import context
 from neutron_lib.plugins.ml2 import api
 from neutron.db import api as db_api
@@ -69,7 +67,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         network_id = network['id']
         host = context.host
         binding_profile = context.current.get('binding:profile')
-        switch = CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
+        switch = common.get_switch_from_local_link(binding_profile)
 
         if switch:
             host = switch
@@ -172,7 +170,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         segment = context.bottom_bound_segment
         host = context.host
         binding_profile = context.current.get('binding:profile')
-        switch = CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
+        switch = common.get_switch_from_local_link(binding_profile)
 
         if switch:
             host = switch
@@ -226,29 +224,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                   len(clearable), network['id'], local_segment['id'], ", ".join(clearable) or "<none>")
 
         return list(clearable)
-
-    @staticmethod
-    def switch_from_local_link(binding_profile):
-        if binding_profile:
-            try:
-                if not isinstance(binding_profile, dict):
-                    binding_profile = ast.literal_eval(binding_profile)
-
-                lli = binding_profile.get('local_link_information')
-                # TODO validate assumption that we have 1 lli in list.
-                if lli and lli[0] and isinstance(lli[0], dict):
-                    switch = lli[0].get('switch_info', None) or lli[0].get('switch_id', None)
-                    if switch:
-                        LOG.info("Using link local information for binding host %s", switch)
-                        return switch
-                    else:
-                        LOG.error("Cannot determine switch for local link info %s in binding profile %s.",
-                                  lli[0], binding_profile)
-                else:
-                    LOG.error("Local information %s is invalid in binding profile %s.",
-                              lli, binding_profile)
-            except ValueError:
-                LOG.info("binding Profile %s cannot be parsed", binding_profile)
 
     @staticmethod
     def _network_external(context):
