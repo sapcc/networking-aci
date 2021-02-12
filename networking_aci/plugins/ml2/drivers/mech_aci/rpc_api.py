@@ -150,31 +150,35 @@ class AgentRpcCallback(object):
             binding_host = ml2_db.get_port_binding_host(self.context, port['id'])
             config_host = port_binding.get('host')
 
-            if binding_host not in processed_hosts:
-                binding_profile = port_binding.get('profile')
-                if binding_profile:
-                    switch = common.get_switch_from_local_link(binding_profile)
-                    if switch:
-                        config_host = switch
+            if binding_host in processed_hosts:
+                continue
 
-                binding_levels = ml2_db.get_binding_levels(self.context, port['id'], binding_host)
-                host_id, host_config = ACI_CONFIG.get_hostgroup_by_host(config_host)
+            binding_profile = port_binding.get('profile')
+            if binding_profile:
+                switch = common.get_switch_from_local_link(binding_profile)
+                if switch:
+                    config_host = switch
 
-                if binding_levels:
-                    # for now we use binding level one
-                    for binding in binding_levels:
-                        if binding.level == 1:
-                            # Store one binding for each binding host
-                            segment = segment_dict.get(binding.segment_id)
-                            if segment:
-                                result['bindings'].append({
-                                    'binding:host_id': binding_host,
-                                    'host_config': host_config,
-                                    'encap': segment.get('segmentation_id'),
-                                    'network_type': segment.get('network_type'),
-                                    'physical_network': segment.get('physical_network')
-                                })
-                                processed_hosts.append(binding_host)
+            binding_levels = ml2_db.get_binding_levels(self.context, port['id'], binding_host)
+            host_id, host_config = ACI_CONFIG.get_hostgroup_by_host(config_host)
+
+            if not binding_levels:
+                continue
+
+            # for now we use binding level one
+            for binding in binding_levels:
+                if binding.level == 1:
+                    # Store one binding for each binding host
+                    segment = segment_dict.get(binding.segment_id)
+                    if segment:
+                        result['bindings'].append({
+                            'binding:host_id': binding_host,
+                            'host_config': host_config,
+                            'encap': segment.get('segmentation_id'),
+                            'network_type': segment.get('network_type'),
+                            'physical_network': segment.get('physical_network')
+                        })
+                        processed_hosts.append(binding_host)
 
         LOG.info("get network %s :  %s seconds", network_id, (time.time() - start))
         return result
