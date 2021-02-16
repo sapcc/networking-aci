@@ -18,7 +18,6 @@ from neutron.db import address_scope_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import external_net_db
 from neutron.db import models_v2
-from neutron.db import portbindings_db
 from neutron.db import segments_db as ml2_db
 from neutron.plugins.ml2 import models as ml2_models
 from oslo_log import log as logging
@@ -97,3 +96,11 @@ def get_switch_from_local_link(binding_profile):
                           lli, binding_profile)
         except ValueError:
             LOG.info("binding Profile %s cannot be parsed", binding_profile)
+
+
+def get_host_from_profile(binding_profile, host):
+    """Get switch from binding_profile, if present, else return host"""
+    switch = get_switch_from_local_link(binding_profile)
+    if switch:
+        return switch
+    return host

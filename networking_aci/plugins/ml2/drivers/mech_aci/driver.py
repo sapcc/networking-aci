@@ -65,12 +65,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         port = context.current
         network = context.network.current
         network_id = network['id']
-        host = context.host
-        binding_profile = context.current.get('binding:profile')
-        switch = common.get_switch_from_local_link(binding_profile)
-
-        if switch:
-            host = switch
+        host = common.get_host_from_profile(context.current.get('binding:profile'), context.host)
 
         LOG.info("Using binding host %s for binding port %s", host, port['id'])
         host_group_name, host_config = ACI_CONFIG.get_hostgroup_by_host(host)
@@ -168,12 +163,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         # but will need some review if we ever have several dynamically bound segements
         # network_id = context.network.current['id']
         segment = context.bottom_bound_segment
-        host = context.host
-        binding_profile = context.current.get('binding:profile')
-        switch = common.get_switch_from_local_link(binding_profile)
+        host = common.get_host_from_profile(context.current.get('binding:profile'), context.host)
 
-        if switch:
-            host = switch
         _, host_config = ACI_CONFIG.get_hostgroup_by_host(host)
 
         if not host_config:

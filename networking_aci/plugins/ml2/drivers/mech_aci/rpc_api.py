@@ -148,18 +148,12 @@ class AgentRpcCallback(object):
         for port in ports:
             port_binding = port.port_binding
             binding_host = ml2_db.get_port_binding_host(self.context, port['id'])
-            config_host = port_binding.get('host')
 
             if binding_host in processed_hosts:
                 continue
 
-            binding_profile = port_binding.get('profile')
-            if binding_profile:
-                switch = common.get_switch_from_local_link(binding_profile)
-                if switch:
-                    config_host = switch
-
             binding_levels = ml2_db.get_binding_levels(self.context, port['id'], binding_host)
+            config_host = common.get_host_from_profile(port_binding.get('profile'), port_binding.get('host'))
             host_id, host_config = ACI_CONFIG.get_hostgroup_by_host(config_host)
 
             if not binding_levels:
