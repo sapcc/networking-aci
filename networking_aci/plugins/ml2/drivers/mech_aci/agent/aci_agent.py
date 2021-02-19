@@ -44,8 +44,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                  minimize_polling=False,
                  quitting_rpc_timeout=None,
                  conf=None,
-                 aci_monitor_respawn_interval=(
-                         aci_constants.DEFAULT_ACI_RESPAWN)):
+                 aci_monitor_respawn_interval=aci_constants.DEFAULT_ACI_RESPAWN):
         self.tenant_manager = driver.DriverManager(namespace='aci.tenant.managers', name=CONF.ml2_aci.tenant_manager,
                                                    invoke_on_load=True).driver
 

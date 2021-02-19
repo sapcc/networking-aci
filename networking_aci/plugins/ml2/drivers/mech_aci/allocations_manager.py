@@ -77,13 +77,13 @@ class AllocationsManager(object):
         if not segment:
             with session.begin(subtransactions=True):
                 segment = ml2_models.NetworkSegment(
-                        id=uuidutils.generate_uuid(),
-                        network_id=network_id,
-                        network_type=segment_type,
-                        physical_network=segment_physnet,
-                        segmentation_id=segmentation_id,
-                        segment_index=level,
-                        is_dynamic=False
+                    id=uuidutils.generate_uuid(),
+                    network_id=network_id,
+                    network_type=segment_type,
+                    physical_network=segment_physnet,
+                    segmentation_id=segmentation_id,
+                    segment_index=level,
+                    is_dynamic=False
                 )
                 session.add(segment)
 
@@ -125,13 +125,13 @@ class AllocationsManager(object):
             alloc = random.choice(allocs)
 
             segment = ml2_models.NetworkSegment(
-                    id=uuidutils.generate_uuid(),
-                    network_id=network_id,
-                    network_type=alloc.segment_type,
-                    physical_network=segment_physnet,
-                    segmentation_id=alloc.segmentation_id,
-                    segment_index=level,
-                    is_dynamic=False
+                id=uuidutils.generate_uuid(),
+                network_id=network_id,
+                network_type=alloc.segment_type,
+                physical_network=segment_physnet,
+                segmentation_id=alloc.segmentation_id,
+                segment_index=level,
+                is_dynamic=False
             )
             session.add(segment)
 
