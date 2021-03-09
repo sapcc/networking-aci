@@ -18,9 +18,13 @@ from neutron.db import address_scope_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import external_net_db
 from neutron.db import models_v2
+from neutron.db.models import segment as segment_models
 from neutron.db import segments_db as ml2_db
 from neutron.plugins.ml2 import models as ml2_models
 from oslo_log import log as logging
+
+from networking_aci.db.models import HostgroupModeModel
+
 
 LOG = logging.getLogger(__name__)
 
@@ -69,6 +73,72 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             return
 
         return scope.get('name')
+
+    def get_hostgroup_modes(self, context, hostgroup_names=None):
+        hg_modes = {}
+        query = context.session.query(HostgroupModeModel)
+        if hostgroup_names:
+            query = query.filter(HostgroupModeModel.hostgroup.in_(hostgroup_names))
+        for entry in query.all():
+            hg_modes[entry.hostgroup] = entry.mode
+        return hg_modes
+
+    def get_hostgroup_mode(self, context, hostgroup_name):
+        hg_modes = self.get_hostgroup_modes(context, [hostgroup_name])
+        return hg_modes.get(hostgroup_name)
+
+    def set_hostgroup_mode(self, context, hostgroup_name, hostgroup_mode):
+        with context.session.begin(subtransactions=True):
+            query = context.session.query(HostgroupModeModel).filter(HostgroupModeModel.hostgroup == hostgroup_name)
+            hg = query.first()
+            if not hg:
+                return False
+            hg.mode = hostgroup_mode
+        return True
+
+    def get_hosts_on_segment(self, context, segment_id, level=None):
+        """Get all binding hosts (from host or binding_profile) present on a segment"""
+        # get all ports bound to segment, extract their host
+        query = context.session.query(ml2_models.PortBinding.host, ml2_models.PortBinding.profile)
+        query = query.join(ml2_models.PortBindingLevel,
+                           ml2_models.PortBinding.port_id == ml2_models.PortBindingLevel.port_id)
+        query = query.filter(ml2_models.PortBindingLevel.segment_id == segment_id)
+        if level is not None:
+            query = query.filter(ml2_models.PortBindingLevel.level == level)
+
+        hosts = set()
+        for entry in query.all():
+            host = get_host_from_profile(entry.profile, entry.host)
+            hosts.add(host)
+        return hosts
+
+    def get_hosts_on_network(self, context, network_id, level=None, with_segment=False):
+        """Get all binding hosts (from host or binding_profile) present on a network"""
+        fields = [ml2_models.PortBinding.host, ml2_models.PortBinding.profile]
+        if with_segment:
+            fields.append(ml2_models.PortBindingLevel.segment_id)
+        query = context.session.query(*fields)
+        query = query.join(ml2_models.PortBindingLevel,
+                           ml2_models.PortBinding.port_id == ml2_models.PortBindingLevel.port_id)
+        query = query.join(segment_models.NetworkSegment,
+                           ml2_models.PortBindingLevel.segment_id == segment_models.NetworkSegment.id)
+        query = query.filter(segment_models.NetworkSegment.network_id == network_id)
+        if level is not None:
+            query = query.filter(ml2_models.PortBindingLevel.level == level)
+
+        hosts = set()
+        for entry in query.all():
+            host = get_host_from_profile(entry.profile, entry.host)
+            if with_segment:
+                hosts.add((host, entry.segment_id))
+            else:
+                hosts.add(host)
+        return hosts
+
+    def get_segment_ids_by_physnet(self, context, physical_network):
+        query = context.session.query(segment_models.NetworkSegment.id)
+        query = query.filter(segment_models.NetworkSegment.physical_network == physical_network)
+        return [seg.id for seg in query.all()]
 
 
 def get_segments(context, network_id):

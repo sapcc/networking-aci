@@ -14,7 +14,10 @@
 #    under the License.
 
 from neutron_lib.db import model_base
+from neutron.db import standard_attr
 import sqlalchemy as sa
+
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 
 
 class AllocationsModel(model_base.BASEV2):
@@ -33,3 +36,12 @@ class AllocationsModel(model_base.BASEV2):
             name='restrict_one_segment_per_host_level_segtype_network'),
         model_base.BASEV2.__table_args__
     )
+
+
+class HostgroupModeModel(standard_attr.HasStandardAttributes, model_base.BASEV2):
+    __tablename__ = 'aci_hostgroup_modes'
+
+    hostgroup = sa.Column(sa.String(255), nullable=False, primary_key=True)
+    mode = sa.Column(sa.String(32), nullable=False, default=aci_const.MODE_INFRA)
+
+    api_collections = []

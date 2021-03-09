@@ -16,3 +16,7 @@ ACI_AGENT_TYPE = 'ACI Agent'
 ACI_TOPIC = "ACI"
 DEFAULT_ACI_RESPAWN = 30
 VIF_TYPE_ACI = 'ACI'
+ACI_DRIVER_NAME = 'aci'  # same as setup.cfg aci = ... in entry_points
+
+MODE_BAREMETAL = 'baremetal'
+MODE_INFRA = 'infra'

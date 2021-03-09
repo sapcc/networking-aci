@@ -30,7 +30,7 @@ from stevedore import driver
 
 from networking_aci._i18n import _LI, _LE
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_manager
-from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
 
 LOG = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                  minimize_polling=False,
                  quitting_rpc_timeout=None,
                  conf=None,
-                 aci_monitor_respawn_interval=aci_constants.DEFAULT_ACI_RESPAWN):
+                 aci_monitor_respawn_interval=aci_const.DEFAULT_ACI_RESPAWN):
         self.tenant_manager = driver.DriverManager(namespace='aci.tenant.managers', name=CONF.ml2_aci.tenant_manager,
                                                    invoke_on_load=True).driver
 
@@ -72,7 +72,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
             'host': CONF.host,
             'topic': n_const.L2_AGENT_TOPIC,
             'configurations': {},
-            'agent_type': aci_constants.ACI_AGENT_TYPE,
+            'agent_type': aci_const.ACI_AGENT_TYPE,
             'start_flag': True}
 
         self.aci_manager = cobra_manager.CobraManager(self.agent_rpc, self.tenant_manager)
@@ -107,6 +107,14 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.aci_manager.delete_subnet(subnet, external=external, address_scope_name=address_scope_name,
                                        last_on_network=last_on_network)
 
+    @log_helpers.log_method_call
+    def clean_baremetal_objects_agent(self, host_config):
+        self.aci_manager.clean_baremetal_objects(host_config)
+
+    @log_helpers.log_method_call
+    def sync_direct_mode_config_agent(self, host_config):
+        self.aci_manager.ensure_hostgroup_mode_config(host_config, source="via rpc api")
+
     # End RPC callbacks
 
     # Start Agent mechanics
@@ -119,9 +127,9 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.agent_rpc = rpc_api.AgentRpcClientAPI(self.context)
 
         # Define the listening consumers for the agent
-        consumers = [[aci_constants.ACI_TOPIC, topics.CREATE],
-                     [aci_constants.ACI_TOPIC, topics.UPDATE],
-                     [aci_constants.ACI_TOPIC, topics.DELETE]]
+        consumers = [[aci_const.ACI_TOPIC, topics.CREATE],
+                     [aci_const.ACI_TOPIC, topics.UPDATE],
+                     [aci_const.ACI_TOPIC, topics.DELETE]]
 
         self.connection = agent_rpc.create_consumers([self],
                                                      topics.AGENT,

@@ -17,3 +17,12 @@ from neutron_lib import exceptions
 
 class NoAllocationFoundInMaximumAllowedAttempts(exceptions.NeutronException):
     message = "No free allocation could be found within the maximum number of allowed attempts"
+
+
+class SegmentExistsWithDifferentSegmentationId(exceptions.NeutronException):
+    message = ("Segmentation id %(segmentation_id)s already in use by segment %(segment_id)s for "
+               "network %(network_id)s and physnet %(physnet)s")
+
+
+class ACIOpenStackConfigurationError(exceptions.NeutronException):
+    message = "%(reason)s"
