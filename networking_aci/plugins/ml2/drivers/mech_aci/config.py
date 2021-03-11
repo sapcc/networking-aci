@@ -21,6 +21,7 @@ from oslo_log import log as logging
 
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci import exceptions as aci_exc
+from networking_aci.plugins.ml2.drivers.mech_aci import common
 
 LOG = logging.getLogger(__name__)
 DEFAULT_ROOT_HELPER = ('sudo /usr/local/bin/neutron-rootwrap '
@@ -94,6 +95,12 @@ aci_opts = [
     cfg.StrOpt('default_baremetal_pc_policy_group',
                help="Default config group for baremetal port-channel policy group values, "
                     "written as pc-policy-group:$name (without prefix)"),
+    cfg.ListOpt('baremetal_reserved_vlan_ids', default=[],
+                help="List of reserved vlan id ranges in the format of A:B,C:D - e.g 100:107"),
+    cfg.StrOpt('handle_port_update_for_non_baremetal',
+               default=False,
+               help="Port updates (e.g. binding host removed/changed) are only handled for trunk ports. "
+                    "This can be enabled for all ports, but this might have unforseen sideeffects (untested)."),
 ]
 
 hostgroup_opts = [
@@ -263,6 +270,14 @@ class ACIConfig:
 
         return data
 
+    @staticmethod
+    def to_range_list(str_ranges):
+        ranges = []
+        for str_range in str_ranges:
+            range_from, range_to = str_range.split(":")
+            ranges.append((int(range_from), int(range_to) + 1))
+        return ranges
+
     def _parse_hostgroups(self):
         """Parse hostgroups, add missing information, do some sanity checks"""
         self._hostgroups = self._parse_config("aci-hostgroup", hostgroup_opts, to_dict=True)
@@ -274,11 +289,7 @@ class ACIConfig:
             # handle segment ranges
             segment_ranges = hostgroup['segment_range']
             if segment_ranges:
-                ranges = []
-                for segment_range in segment_ranges:
-                    seg_from, seg_to = segment_range.split(":")
-                    ranges.append((int(seg_from), int(seg_to) + 1))
-                hostgroup['segment_range'] = ranges
+                hostgroup['segment_range'] = self.to_range_list(segment_ranges)
 
         for hostgroup_name, hostgroup in self._hostgroups.items():
             if not hostgroup['direct_mode']:
@@ -404,6 +415,11 @@ class ACIConfig:
 
     def get_pc_policy_group_data(self, name):
         return self.pc_policy_groups.get(name)
+
+    @property
+    def baremetal_reserved_vlans(self):
+        ranges = self.to_range_list(CONF.ml2_aci.baremetal_reserved_vlan_ids)
+        return common.get_set_from_ranges(ranges)
 
 
 ACI_CONFIG = ACIConfig()

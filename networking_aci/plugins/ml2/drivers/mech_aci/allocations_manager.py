@@ -26,6 +26,7 @@ import sqlalchemy as sa
 from networking_aci._i18n import _LI
 from networking_aci.db.models import AllocationsModel, HostgroupModeModel
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
+from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import NoAllocationFoundInMaximumAllowedAttempts
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import SegmentExistsWithDifferentSegmentationId
 
@@ -269,12 +270,7 @@ class AllocationsManager(object):
 
     @staticmethod
     def _segmentation_ids(host_config):
-        segment_ranges = set()
-        for seg_from, seg_to in host_config['segment_range']:
-            segment_range = set(range(seg_from, seg_to + 1))
-            segment_ranges |= segment_range
-
-        return segment_ranges
+        return common.get_set_from_ranges(host_config['segment_range'])
 
     def _sync_allocations(self):
         LOG.info("Preparing ACI Allocations table")

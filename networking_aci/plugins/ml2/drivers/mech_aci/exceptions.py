@@ -26,3 +26,11 @@ class SegmentExistsWithDifferentSegmentationId(exceptions.NeutronException):
 
 class ACIOpenStackConfigurationError(exceptions.NeutronException):
     message = "%(reason)s"
+
+
+class TrunkHostgroupNotInBaremetalMode(exceptions.NeutronException):
+    message = "Cannot create trunk on for port %(port_id)s: Hostgroup %(hostgroup)s is not in baremetal mode"
+
+
+class TrunkCannotAllocateReservedVlan(exceptions.NeutronException):
+    message = "VLAN %(segmentation_id)s is reserved and cannot be allocated by users"

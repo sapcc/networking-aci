@@ -70,15 +70,20 @@ class CobraManager(object):
 
         return pdn
 
-    def get_static_binding_encap(self, segment_type, encap):
+    @staticmethod
+    def get_static_binding_encap(segment_type, encap):
         if segment_type == 'vlan':
             encap = ENCAP_VLAN % str(encap)
 
         return encap
 
-    @staticmethod
-    def get_encap_mode(hostgroup):
-        if hostgroup['direct_mode']:
+    @classmethod
+    def get_encap_mode(cls, hostgroup, encap):
+        # normal VMs OR baremetal hosts with segment id != 1 --> trunk
+        # baremetal hosts with vlan id 1 or infra hosts --> access
+        vlan_1 = cls.get_static_binding_encap('vlan', 1)
+        if hostgroup['direct_mode'] and \
+                not (hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and encap != vlan_1):
             return "untagged"  # access
         else:
             return "regular"  # trunk
@@ -177,7 +182,7 @@ class CobraManager(object):
         bindings = host_config['bindings']
         segment_type = host_config['segment_type']
         encap = self.get_static_binding_encap(segment_type, encap)
-        encap_mode = self.get_encap_mode(host_config)
+        encap_mode = self.get_encap_mode(host_config, encap)
         app = fv.Ap(tenant, self.apic_application_profile)
         epg = fv.AEPg(app, network_id)
         entities = []
