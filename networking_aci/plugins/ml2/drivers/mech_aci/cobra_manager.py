@@ -82,7 +82,7 @@ class CobraManager(object):
         # normal VMs OR baremetal hosts with segment id != 1 --> trunk
         # baremetal hosts with vlan id 1 or infra hosts --> access
         vlan_1 = cls.get_static_binding_encap('vlan', 1)
-        if hostgroup['direct_mode'] and \
+        if hostgroup.get('direct_mode', False) and \
                 not (hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and encap != vlan_1):
             return "untagged"  # access
         else:
@@ -178,7 +178,7 @@ class CobraManager(object):
                       .format(network_id, self.tenant_manager.get_tenant_name(network_id)))
             return
 
-        direct_mode = host_config['direct_mode']
+        direct_mode = host_config.get('direct_mode', False)
         bindings = host_config['bindings']
         segment_type = host_config['segment_type']
         encap = self.get_static_binding_encap(segment_type, encap)
@@ -243,7 +243,7 @@ class CobraManager(object):
         return True
 
     def clean_baremetal_objects(self, host_config):
-        if not host_config['direct_mode'] or not host_config['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
+        if not host_config.get('direct_mode', False) or not host_config['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
             return
 
         resource_name = host_config['baremetal_resource_name']
