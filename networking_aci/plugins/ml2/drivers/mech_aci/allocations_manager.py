@@ -179,7 +179,7 @@ class AllocationsManager(object):
         return release(network, host_config, level, segment)
 
     def _release_vlan_segment(self, network, host_config, level, segment):
-        LOG.info("Releasing segment %(segment)s with top level VLAN segment", {"segment": segment})
+        LOG.debug("Checking release for segment %(segment)s with top level VLAN segment", {"segment": segment})
 
         session = db_api.get_writer_session()
         with session.begin(subtransactions=True):
@@ -190,7 +190,7 @@ class AllocationsManager(object):
             query.delete()
 
     def _release_vxlan_segment(self, network, host_config, level, segment):
-        LOG.info("Releasing segment %(segment)s with top level VXLAN segment", {"segment": segment})
+        LOG.debug("Checking release for segment %(segment)s with top level VXLAN segment", {"segment": segment})
         segment_type = segment['network_type']
         segment_id = segment['id']
         segmentation_id = segment['segmentation_id']
@@ -202,7 +202,9 @@ class AllocationsManager(object):
                       filter_by(segment_id=segment_id, level=level))
 
             if select.count() > 0:
+                LOG.debug("Segment %s still has ports on it", segment_id)
                 return False
+            LOG.info("Segment %s is empty and can be released", segment_id)
 
             segmentation_ids = self._segmentation_ids(host_config)
             inside = segmentation_id in segmentation_ids

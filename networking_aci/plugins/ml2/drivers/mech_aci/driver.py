@@ -139,7 +139,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             'segment_index': level
         }
 
-        LOG.info("Next segment to bind for port %s: %s", port['id'], next_segment)
+        LOG.info("Next segment to bind for port %s on %s: %s", port['id'], segment["id"], next_segment)
         if not hostgroup['direct_mode']:
             # for direct mode the rpc call will be made by the next level binding
             ACI_CONFIG.clean_bindings(hostgroup, allocation.segment_id, level=level)
