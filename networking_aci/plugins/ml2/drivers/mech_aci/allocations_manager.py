@@ -281,7 +281,7 @@ class AllocationsManager(object):
         session = db_api.get_writer_session()
         with session.begin(subtransactions=True):
             allocations = dict()
-            allocs = (session.query(AllocationsModel).with_lockmode('update'))
+            allocs = (session.query(AllocationsModel).with_for_update())
 
             for alloc in allocs:
                 alloc_key = self._allocation_key(alloc.host, alloc.level, alloc.segment_type)
@@ -347,7 +347,7 @@ class AllocationsManager(object):
         with session.begin(subtransactions=True):
             # fetch all mode-hostgroups from db
             db_groups = []
-            for db_entry in (session.query(HostgroupModeModel).with_lockmode('update')):
+            for db_entry in (session.query(HostgroupModeModel).with_for_update()):
                 db_groups.append(db_entry.hostgroup)
 
             for hg_name, hg in ACI_CONFIG.hostgroups.items():
