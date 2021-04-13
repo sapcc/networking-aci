@@ -15,48 +15,42 @@
 import random
 
 from neutron.db import api as db_api
-from neutron_lib.db import model_base
 from neutron.db.models import segment as ml2_models
 from neutron.plugins.ml2 import models
 from oslo_config import cfg
 from oslo_db import exception as db_exc
 from oslo_log import log
 from oslo_utils import uuidutils
-from six import moves
 import sqlalchemy as sa
 
 from networking_aci._i18n import _LI
+from networking_aci.db.models import AllocationsModel, HostgroupModeModel
+from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
+from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import NoAllocationFoundInMaximumAllowedAttempts
+from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import SegmentExistsWithDifferentSegmentationId
 
 LOG = log.getLogger(__name__)
-
-
-class AllocationsModel(model_base.BASEV2):
-    __tablename__ = 'aci_port_binding_allocations'
-
-    host = sa.Column(sa.String(255), nullable=False, primary_key=True)
-    level = sa.Column(sa.Integer(), nullable=False, primary_key=True)
-    segment_type = sa.Column(sa.String(255), nullable=False, primary_key=True)
-    segmentation_id = sa.Column(sa.Integer(), nullable=False, primary_key=True)
-    segment_id = sa.Column(sa.String(36), sa.ForeignKey('networksegments.id', ondelete='SET NULL'), nullable=True)
-    network_id = sa.Column(sa.String(36), sa.ForeignKey('networks.id', ondelete='SET NULL'), nullable=True)
-
-    __table_args__ = (
-        sa.UniqueConstraint(
-            host, level, segment_type, network_id,
-            name='restrict_one_segment_per_host_level_segtype_network'),
-        model_base.BASEV2.__table_args__
-    )
+CONF = cfg.CONF
 
 
 class AllocationsManager(object):
-    def __init__(self, network_config):
-        self.hostgroup_config = network_config['hostgroup_dict']
-        if cfg.CONF.ml2_aci.sync_allocations:
-            self._sync_allocations()
+    def __init__(self):
+        if CONF.ml2_aci.sync_allocations:
+            try:
+                self._sync_allocations()
+            except Exception:
+                LOG.exception("__init__ sync alloc")
+                raise
+        self._sync_hostgroup_modes()
 
     def initialize(self):
-        self._sync_allocations()
+        try:
+            self._sync_allocations()
+        except Exception:
+            LOG.exception("initialize sync alloc")
+            raise
+        self._sync_hostgroup_modes()
         LOG.info(_LI("AllocationsManager initialization complete"))
 
     def network_type_not_supported(self, network, host_id, level, segment_type, segment_physnet):
@@ -95,13 +89,13 @@ class AllocationsManager(object):
         if not segment:
             with session.begin(subtransactions=True):
                 segment = ml2_models.NetworkSegment(
-                        id=uuidutils.generate_uuid(),
-                        network_id=network_id,
-                        network_type=segment_type,
-                        physical_network=segment_physnet,
-                        segmentation_id=segmentation_id,
-                        segment_index=level,
-                        is_dynamic=False
+                    id=uuidutils.generate_uuid(),
+                    network_id=network_id,
+                    network_type=segment_type,
+                    physical_network=segment_physnet,
+                    segmentation_id=segmentation_id,
+                    segment_index=level,
+                    is_dynamic=False
                 )
                 session.add(segment)
 
@@ -143,13 +137,13 @@ class AllocationsManager(object):
             alloc = random.choice(allocs)
 
             segment = ml2_models.NetworkSegment(
-                    id=uuidutils.generate_uuid(),
-                    network_id=network_id,
-                    network_type=alloc.segment_type,
-                    physical_network=segment_physnet,
-                    segmentation_id=alloc.segmentation_id,
-                    segment_index=level,
-                    is_dynamic=False
+                id=uuidutils.generate_uuid(),
+                network_id=network_id,
+                network_type=alloc.segment_type,
+                physical_network=segment_physnet,
+                segmentation_id=alloc.segmentation_id,
+                segment_index=level,
+                is_dynamic=False
             )
             session.add(segment)
 
@@ -185,7 +179,7 @@ class AllocationsManager(object):
         return release(network, host_config, level, segment)
 
     def _release_vlan_segment(self, network, host_config, level, segment):
-        LOG.info("Releasing segment %(segment)s with top level VLAN segment", {"segment": segment})
+        LOG.debug("Checking release for segment %(segment)s with top level VLAN segment", {"segment": segment})
 
         session = db_api.get_writer_session()
         with session.begin(subtransactions=True):
@@ -196,7 +190,7 @@ class AllocationsManager(object):
             query.delete()
 
     def _release_vxlan_segment(self, network, host_config, level, segment):
-        LOG.info("Releasing segment %(segment)s with top level VXLAN segment", {"segment": segment})
+        LOG.debug("Checking release for segment %(segment)s with top level VXLAN segment", {"segment": segment})
         segment_type = segment['network_type']
         segment_id = segment['id']
         segmentation_id = segment['segmentation_id']
@@ -207,39 +201,78 @@ class AllocationsManager(object):
             select = (session.query(models.PortBindingLevel).
                       filter_by(segment_id=segment_id, level=level))
 
-            if select.count() == 0:
-                segmentation_ids = self._segmentation_ids(host_config)
-                inside = segmentation_id in segmentation_ids
-                query = (session.query(AllocationsModel).
-                         filter_by(network_id=network_id, level=level, segment_type=segment_type,
-                                   segment_id=segment_id))
-                if inside:
-                    query.update({"network_id": None, "segment_id": None})
-                else:
-                    query.delete()
+            if select.count() > 0:
+                LOG.debug("Segment %s still has ports on it", segment_id)
+                return False
+            LOG.info("Segment %s is empty and can be released", segment_id)
 
-                # Delete the network segment
-                query = (session.query(ml2_models.NetworkSegment).
-                         filter_by(id=segment_id, network_id=network_id, network_type=segment_type,
-                                   segmentation_id=segmentation_id, segment_index=level))
-
+            segmentation_ids = self._segmentation_ids(host_config)
+            inside = segmentation_id in segmentation_ids
+            query = (session.query(AllocationsModel).
+                     filter_by(network_id=network_id, level=level, segment_type=segment_type,
+                               segment_id=segment_id))
+            if inside:
+                query.update({"network_id": None, "segment_id": None})
+            else:
                 query.delete()
 
-                return True
-        return False
+            # Delete the network segment
+            query = (session.query(ml2_models.NetworkSegment).
+                     filter_by(id=segment_id, network_id=network_id, network_type=segment_type,
+                               segmentation_id=segmentation_id, segment_index=level))
+
+            query.delete()
+
+            return True
+
+    @db_api.retry_db_errors
+    def allocate_baremetal_segment(self, network, hostgroup, physical_network, level, segmentation_id):
+        """Allocate a "baremetal segment" with pre-specified id
+
+        For such a segment we don't use an ACI allocation entry. No extra release method is required,
+        as it works the same way as with _release_vxlan_segment(). If a segment already exists for a
+        given physnet/network combination we raise an exception
+        """
+        segment_type = hostgroup.get('segment_type', 'vlan')
+        segment_physnet = hostgroup.get('physical_network')
+        network_id = network['id']
+
+        session = db_api.get_writer_session()
+        segment = session.query(ml2_models.NetworkSegment).filter_by(segmentation_id=segmentation_id,
+                                                                     physical_network=segment_physnet,
+                                                                     network_type=segment_type,
+                                                                     network_id=network_id,
+                                                                     segment_index=level).first()
+
+        if not segment:
+            with session.begin(subtransactions=True):
+                segment = ml2_models.NetworkSegment(
+                    id=uuidutils.generate_uuid(),
+                    network_id=network_id,
+                    network_type=segment_type,
+                    physical_network=segment_physnet,
+                    segmentation_id=segmentation_id,
+                    segment_index=level,
+                    is_dynamic=False
+                )
+                session.add(segment)
+        else:
+            # check segment has correct id
+            if segment.segmentation_id != segmentation_id:
+                raise SegmentExistsWithDifferentSegmentationId(
+                    segmentation_id=segmentation_id,
+                    segment_id=segment.segment_id,
+                    network_id=network_id,
+                    physnet=segment_physnet)
+
+        return segment
 
     def _allocation_key(self, host_id, level, segment_type):
         return "{}_{}_{}".format(host_id, level, segment_type)
 
     @staticmethod
     def _segmentation_ids(host_config):
-        segment_ranges = []
-        for segment in host_config['segment_range'].split(','):
-            segment_range_str = segment.strip().split(':')
-            segment_range = moves.range(int(segment_range_str[0]), int(segment_range_str[1]) + 1)
-            segment_ranges.extend(segment_range)
-
-        return set(segment_ranges)
+        return common.get_set_from_ranges(host_config['segment_range'])
 
     def _sync_allocations(self):
         LOG.info("Preparing ACI Allocations table")
@@ -250,7 +283,7 @@ class AllocationsManager(object):
         session = db_api.get_writer_session()
         with session.begin(subtransactions=True):
             allocations = dict()
-            allocs = (session.query(AllocationsModel).with_lockmode('update'))
+            allocs = (session.query(AllocationsModel).with_for_update())
 
             for alloc in allocs:
                 alloc_key = self._allocation_key(alloc.host, alloc.level, alloc.segment_type)
@@ -259,7 +292,9 @@ class AllocationsManager(object):
                 allocations[alloc_key].add(alloc)
 
             # process segment ranges for each configured hostgroup
-            for hostgroup, hostgroup_config in self.hostgroup_config.iteritems():
+            for hostgroup, hostgroup_config in ACI_CONFIG.hostgroups.items():
+                if hostgroup_config['direct_mode']:
+                    continue
                 self._process_host_or_hostgroup(session, hostgroup, hostgroup_config, allocations, level)
 
         # remove from table unallocated vlans for any unconfigured
@@ -275,6 +310,7 @@ class AllocationsManager(object):
                                'level': alloc.level,
                                'segment_type': alloc.segment_type})
                     session.delete(alloc)
+        LOG.info("ACI allocations synced")
 
     def _process_host_or_hostgroup(self, session, host, host_config, allocations, level):
         segment_type = host_config['segment_type']
@@ -305,3 +341,20 @@ class AllocationsManager(object):
             alloc = AllocationsModel(host=host, level=level, segment_type=segment_type, segmentation_id=segmentation_id,
                                      network_id=None)
             session.add(alloc)
+
+    def _sync_hostgroup_modes(self):
+        LOG.info("Preparing hostgroup modes sync")
+
+        session = db_api.get_writer_session()
+        with session.begin(subtransactions=True):
+            # fetch all mode-hostgroups from db
+            db_groups = []
+            for db_entry in (session.query(HostgroupModeModel).with_for_update()):
+                db_groups.append(db_entry.hostgroup)
+
+            for hg_name, hg in ACI_CONFIG.hostgroups.items():
+                if hg['direct_mode'] and hg_name not in db_groups:
+                    LOG.info("Adding %s to hostgroup db", hg_name)
+                    hgmm = HostgroupModeModel(hostgroup=hg_name)
+                    session.add(hgmm)
+        LOG.info("Hostgroup modes synced")

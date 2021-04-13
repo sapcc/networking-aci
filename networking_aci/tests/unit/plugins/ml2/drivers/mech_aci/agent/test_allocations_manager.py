@@ -19,21 +19,17 @@ from networking_aci.plugins.ml2.drivers.mech_aci.allocations_manager import Allo
 class AciNeutronAgentTest(base.BaseTestCase):
     def test_segmentation_ids(self):
         # test single range
-        r = AllocationsManager._segmentation_ids({'segment_range': '100:110'})
+        r = AllocationsManager._segmentation_ids({'segment_range': [(100, 110)]})
         self.assertEqual({100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110}, r)
 
         # test range with one element
-        r = AllocationsManager._segmentation_ids({'segment_range': '100:100'})
+        r = AllocationsManager._segmentation_ids({'segment_range': [(100, 100)]})
         self.assertEqual({100}, r)
 
         # test multiple ranges
-        r = AllocationsManager._segmentation_ids({'segment_range': '100:103,110:112'})
-        self.assertEqual({100, 101, 102, 103, 110, 111, 112}, r)
-
-        # test multiple ranges with trailing whitespace foo
-        r = AllocationsManager._segmentation_ids({'segment_range': ' 100:103 ,  110:112 '})
+        r = AllocationsManager._segmentation_ids({'segment_range': [(100, 103), (110, 112)]})
         self.assertEqual({100, 101, 102, 103, 110, 111, 112}, r)
 
         # test overlapping range
-        r = AllocationsManager._segmentation_ids({'segment_range': '100:102,101:103'})
+        r = AllocationsManager._segmentation_ids({'segment_range': [(100, 102), (101, 103)]})
         self.assertEqual({100, 101, 102, 103}, r)

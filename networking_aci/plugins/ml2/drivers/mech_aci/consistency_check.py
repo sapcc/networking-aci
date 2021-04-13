@@ -31,6 +31,7 @@ from networking_aci.plugins.ml2.drivers.mech_aci import config as aci_config
 
 
 LOG = logging.getLogger(__name__)
+ACI_CONFIG = config.ACI_CONFIG
 
 MODE_CHECK = 'check'
 MODE_SYNC = 'sync'
@@ -53,8 +54,8 @@ class ConsistencyCheck(object):
         self.conf.log_opt_values(LOG, logging.DEBUG)
 
         self.network_config = {
-            'hostgroup_dict': aci_config.create_hostgroup_dictionary(),
-            'address_scope_dict': aci_config.create_addressscope_dictionary()
+            'hostgroup_dict': ACI_CONFIG.hostgroups,
+            'address_scope_dict': ACI_CONFIG.address_scopes,
         }
 
         self.host_group_config = self.network_config['hostgroup_dict']
@@ -64,7 +65,7 @@ class ConsistencyCheck(object):
 
         self.db = DbPlugin()  # db.NeutronDbPluginV2()
         self.tag_plugin = tag_plugin.TagPlugin()
-        self.aci_manager = cobra_manager.CobraManager(self.network_config, self.aci_config, self.tenant_manager)
+        self.aci_manager = cobra_manager.CobraManager(self.tenant_manager)
 
         self.context = context.get_admin_context()
 

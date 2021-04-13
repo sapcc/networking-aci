@@ -31,6 +31,7 @@ import requests.exceptions as rexc
 from requests.exceptions import SSLError
 
 LOG = log.getLogger(__name__)
+CONF = cfg.CONF
 
 RETRY_LIMIT = 2
 FALLBACK_EXCEPTIONS = (rexc.ConnectionError, rexc.Timeout,
@@ -50,10 +51,10 @@ def _retry(func):
         try:
             # check if token is still valid
             token_validity = (self.mo_dir.session.refreshTime or 0) - time.time()
-            if token_validity < cfg.CONF.ml2_aci.reauth_threshold:
+            if token_validity < CONF.ml2_aci.reauth_threshold:
                 LOG.debug("Acquiring session refresh lock")
                 with _TOKEN_REFRESH_LOCK:
-                    if token_validity >= cfg.CONF.ml2_aci.reauth_threshold:
+                    if token_validity >= CONF.ml2_aci.reauth_threshold:
                         LOG.debug("Session was already refreshed by another thread, continuing")
                     elif token_validity > 1:
                         LOG.debug("Session only valid for %ss, refreshing auth", token_validity)

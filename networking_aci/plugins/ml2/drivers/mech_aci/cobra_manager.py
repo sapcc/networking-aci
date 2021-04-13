@@ -12,10 +12,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-import ast
-
-from cobra.model import fv
-from cobra.model import phys
+from cobra.model import fv, fvns, infra, phys
 from cobra import modelimpl
 import netaddr
 from neutron_lib import context
@@ -23,34 +20,33 @@ from oslo_config import cfg
 from oslo_log import log
 
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_client
+from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 
 
 LOG = log.getLogger(__name__)
+CONF = cfg.CONF
 
 ENCAP_VLAN = 'vlan-%s'
 PORT_DN_PATH = 'topology/%s/paths-%s/pathep-[eth%s/%s]'
 VPCPORT_DN_PATH = 'topology/%s/protpaths-%s/pathep-[%s]'
 DPCPORT_DN_PATH = 'topology/%s/paths-%s/pathep-[%s]'
 NODE_DN_PATH = 'topology/%s/paths-%s/pathep-[Switch%s_%s-ports-%s_PolGrp]'
+PORT_SELECTOR_DN = 'uni/infra/accportprof-{}/hports-{}-typ-range'
 
 
 class CobraManager(object):
-    def __init__(self, agent_plugin, network_config, aci_config, tenant_manager):
+    def __init__(self, agent_plugin, tenant_manager):
         # Connect to the APIC
 
         self.agent_plugin = agent_plugin
-        self.aci_config = aci_config
-        self.apic_application_profile = aci_config.apic_application_profile
-        self.tenant_default_vrf = aci_config.tenant_default_vrf
-        self.network_config = network_config
+        self.apic_application_profile = CONF.ml2_aci.apic_application_profile
+        self.tenant_default_vrf = CONF.ml2_aci.tenant_default_vrf
 
-        self.host_dict = network_config.get('host_dict', {})
-        self.address_scope_dict = network_config.get('address_scope_dict', {})
-
-        self.apic = cobra_client.CobraClient(self.aci_config.apic_hosts,
-                                             self.aci_config.apic_username,
-                                             self.aci_config.apic_password,
-                                             self.aci_config.apic_use_ssl)
+        self.apic = cobra_client.CobraClient(CONF.ml2_aci.apic_hosts,
+                                             CONF.ml2_aci.apic_username,
+                                             CONF.ml2_aci.apic_password,
+                                             CONF.ml2_aci.apic_use_ssl)
 
         self.context = context.get_admin_context()
         self.tenant_manager = tenant_manager
@@ -74,11 +70,23 @@ class CobraManager(object):
 
         return pdn
 
-    def get_static_binding_encap(self, segment_type, encap):
+    @staticmethod
+    def get_static_binding_encap(segment_type, encap):
         if segment_type == 'vlan':
             encap = ENCAP_VLAN % str(encap)
 
         return encap
+
+    @classmethod
+    def get_encap_mode(cls, hostgroup, encap):
+        # normal VMs OR baremetal hosts with segment id != 1 --> trunk
+        # baremetal hosts with vlan id 1 or infra hosts --> access
+        vlan_1 = cls.get_static_binding_encap('vlan', 1)
+        if hostgroup.get('direct_mode', False) and \
+                not (hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and encap != vlan_1):
+            return "untagged"  # access
+        else:
+            return "regular"  # trunk
 
     def ensure_domain_and_epg(self, network_id, external=False):
         tenant = self.get_or_create_tenant(network_id)
@@ -88,12 +96,12 @@ class CobraManager(object):
             unicast_route = 1
             move_detect = 1
             limit_ip_learn_subnets = 1
-            ep_retention_policy = cfg.CONF.ml2_aci.ep_retention_policy_net_external
+            ep_retention_policy = CONF.ml2_aci.ep_retention_policy_net_external
         else:
             unicast_route = 0
             move_detect = 0
             limit_ip_learn_subnets = 0
-            ep_retention_policy = cfg.CONF.ml2_aci.ep_retention_policy_net_internal
+            ep_retention_policy = CONF.ml2_aci.ep_retention_policy_net_internal
 
         bd_opts = {
             'arpFlood': 1,
@@ -103,7 +111,7 @@ class CobraManager(object):
             'limitIpLearnToSubnets': limit_ip_learn_subnets
         }
 
-        if self.aci_config.support_remote_mac_clear:
+        if CONF.ml2_aci.support_remote_mac_clear:
             bd_opts['epClear'] = 1
 
         bd = fv.BD(tenant, network_id, **bd_opts)
@@ -147,34 +155,122 @@ class CobraManager(object):
             tenant.delete()
             self.apic.commit(tenant)
 
+    def _gen_port_selector_entities(self, host_config):
+        pc_policy_group = host_config['pc_policy_group']
+        if not pc_policy_group:
+            return []
+
+        pol_ref = infra.AccBndlGrp('uni/infra/funcprof', name=pc_policy_group)
+        entities = []
+        for port_sel in host_config['port_selectors']:
+            if not port_sel.startswith("uni/"):
+                port_sel = PORT_SELECTOR_DN.format(*port_sel.split("/"))
+            acc_base_grp = infra.RsAccBaseGrp(port_sel, tDn=pol_ref.dn)
+            entities.append(acc_base_grp)
+
+        return entities
+
     def ensure_static_bindings_configured(self, network_id, host_config, encap=None,
                                           delete=False, physdoms_to_clear=[]):
         tenant = self.get_tenant(network_id)
-
-        if tenant:
-            bindings = host_config['bindings']
-            segment_type = host_config['segment_type']
-            encap = self.get_static_binding_encap(segment_type, encap)
-            app = fv.Ap(tenant, self.apic_application_profile)
-            epg = fv.AEPg(app, network_id)
-            ports = []
-
-            for binding in bindings:
-                pdn = self.get_pdn(binding)
-                LOG.info("Preparing static binding %s encap %s for network %s", pdn, encap, network_id)
-                port = fv.RsPathAtt(epg, pdn, encap=encap)
-                if delete:
-                    port.delete()
-                ports.append(port)
-
-            self.apic.commit(ports)
-
-            # Associate to Physical Domain
-            for physdom in host_config['physical_domain']:
-                self._ensure_physdom(epg, physdom, (delete and physdom in physdoms_to_clear))
-        else:
+        if not tenant:
             LOG.error("Network {} does not appear to be avilable in ACI, expected in tenant {}"
                       .format(network_id, self.tenant_manager.get_tenant_name(network_id)))
+            return
+
+        direct_mode = host_config.get('direct_mode', False)
+        bindings = host_config['bindings']
+        segment_type = host_config['segment_type']
+        encap = self.get_static_binding_encap(segment_type, encap)
+        encap_mode = self.get_encap_mode(host_config, encap)
+        app = fv.Ap(tenant, self.apic_application_profile)
+        epg = fv.AEPg(app, network_id)
+        entities = []
+
+        if not delete and direct_mode:
+            self.ensure_hostgroup_mode_config(host_config, source="network {}".format(network_id))
+
+        for binding in bindings:
+            pdn = self.get_pdn(binding)
+            LOG.debug("Preparing static binding %s encap %s mode %s for network %s", pdn, encap, encap_mode, network_id)
+            port = fv.RsPathAtt(epg, pdn, encap=encap, mode=encap_mode)
+            if delete:
+                port.delete()
+            entities.append(port)
+
+        self.apic.commit(entities)
+
+        # Associate to Physical Domain
+        for physdom in host_config['physical_domain']:
+            self._ensure_physdom(epg, physdom, (delete and physdom in physdoms_to_clear))
+
+    def ensure_baremetal_entities(self, resource_name, pc_policy_group_name):
+        pc_policy_group_data = ACI_CONFIG.get_pc_policy_group_data(pc_policy_group_name)
+        if not pc_policy_group_data:
+            return False
+
+        # aep, physdom, vlan pool
+        aep = infra.AttEntityP('uni/infra', name=resource_name)
+        physdom = phys.DomP('uni', resource_name)
+        vlan_pool = fvns.VlanInstP('uni/infra', name=resource_name, allocMode="static")
+        encap_blk = fvns.EncapBlk(vlan_pool, 'vlan-1', 'vlan-4095')
+
+        dom_vlan_pool_rel = infra.RsVlanNs(physdom, tDn=vlan_pool.dn)
+        aep_dom_rel = infra.RsDomP(aep, physdom.dn)
+
+        aep_entities = [aep, physdom, vlan_pool, encap_blk, dom_vlan_pool_rel, aep_dom_rel]
+
+        # pc profile
+        pc_profile = infra.AccBndlGrp('uni/infra/funcprof', name=resource_name, lagT=pc_policy_group_data['lag_mode'])
+        pc_entities = [pc_profile]
+        pc_attrs = [
+            ('link_level_policy', infra.RsHIfPol, 'tnFabricHIfPolName'),
+            ('cdp_policy', infra.RsCdpIfPol, 'tnCdpIfPolName'),
+            ('lldp_policy', infra.RsLldpIfPol, 'tnLldpIfPolName'),
+            ('lapc_policy', infra.RsLacpPol, 'tnLacpLagPolName'),
+            ('mcp_policy', infra.RsMcpIfPol, 'tnMcpIfPolName'),
+            ('monitoring_policy', infra.RsMonIfInfraPol, 'tnMonInfraPolName'),
+            ('l2_policy', infra.RsL2IfPol, 'tnL2IfPolName'),
+        ]
+        for pc_conf_name, pc_rs, pc_attr in pc_attrs:
+            pc_attr_val = pc_policy_group_data[pc_conf_name]
+            if pc_attr_val:
+                entity = pc_rs(pc_profile, **{pc_attr: pc_attr_val})
+                pc_entities.append(entity)
+        pc_entities.append(infra.RsAttEntP(pc_profile, tDn=aep.dn))
+        self.apic.commit(aep_entities + pc_entities)
+
+        return True
+
+    def clean_baremetal_objects(self, host_config):
+        if not host_config.get('direct_mode', False) or not host_config['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
+            return
+
+        resource_name = host_config['baremetal_resource_name']
+        aep = infra.AttEntityP('uni/infra', name=resource_name)
+        aep.delete()
+        physdom = phys.DomP('uni', resource_name)
+        physdom.delete()
+        vlan_pool = fvns.VlanInstP('uni/infra', name=resource_name, allocMode="static")
+        vlan_pool.delete()
+        pc_profile = infra.AccBndlGrp('uni/infra/funcprof', name=resource_name)
+        pc_profile.delete()
+
+        self.apic.commit([aep, physdom, vlan_pool, pc_profile])
+
+    def ensure_hostgroup_mode_config(self, host_config, source=""):
+        if host_config['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
+            if not self.ensure_baremetal_entities(host_config['baremetal_resource_name'],
+                                                  host_config['baremetal_pc_policy_group']):
+                LOG.error("Could not create baremetal entities for hostgroup %s %s",
+                          host_config['name'], source)
+
+        port_sel_entities = self._gen_port_selector_entities(host_config)
+        if not port_sel_entities:
+            LOG.error("No port selector entity configuration could be generated for hostgroup %s %s"
+                      " - are there configuration entities missing?",
+                      host_config['name'], source)
+        self.apic.commit(port_sel_entities)
 
     def create_subnet(self, subnet, external, address_scope_name):
         self._configure_subnet(subnet, external=external, address_scope_name=address_scope_name,
@@ -192,7 +288,7 @@ class CobraManager(object):
         subnet = fv.Subnet(bd, gateway, scope=scope_config.get('scope', 'public'), ctrl='querier')
         subnet_outs = []
 
-        for l3_out in l3_outs.split(','):
+        for l3_out in l3_outs:
             out = self._find_l3_out(network_id, l3_out)
 
             if out:
@@ -240,7 +336,7 @@ class CobraManager(object):
         # out_profile  = RsBDToProfile(bd,tnL3extOutName=l3_out_name)
         vrf = fv.RsCtx(bd, vrf_name, tnFvCtxName=vrf_name)
         bd_outs = []
-        for l3_out in l3_outs.split(','):
+        for l3_out in l3_outs:
             out = self._find_l3_out(network_id, l3_out)
             if out:
                 bd_out = fv.RsBDToOut(bd, out.name)
@@ -258,21 +354,17 @@ class CobraManager(object):
         epg = fv.AEPg(app, network_id)
 
         epg_contracts = []
+        for consumed in scope_config['consumed_contracts']:
+            contract = fv.RsCons(epg, consumed)
+            if delete and last_on_network:
+                contract.delete()
+            epg_contracts.append(contract)
 
-        contract_def = ast.literal_eval(scope_config['contracts'])
-        for contract_type, contracts in contract_def.iteritems():
-            if contract_type == 'consumed':
-                for contract in contracts:
-                    contract = fv.RsCons(epg, contract)
-                    if delete and last_on_network:
-                        contract.delete()
-                    epg_contracts.append(contract)
-            elif contract_type == 'provided':
-                for contract in contracts:
-                    contract = fv.RsProv(epg, contract)
-                    if delete and last_on_network:
-                        contract.delete()
-                    epg_contracts.append(contract)
+        for provided in scope_config['provided_contracts']:
+            contract = fv.RsCons(epg, provided)
+            if delete and last_on_network:
+                contract.delete()
+            epg_contracts.append(contract)
 
         self.apic.commit([vrf] + bd_outs + epg_contracts)
 
@@ -298,7 +390,7 @@ class CobraManager(object):
 
     def get_all_epgs(self):
         """Get all EPGs managed by OpenStack"""
-        wcard = 'wcard(fvAEPg.dn, "/tn-{}")'.format(cfg.CONF.ml2_aci.tenant_prefix)
+        wcard = 'wcard(fvAEPg.dn, "/tn-{}")'.format(CONF.ml2_aci.tenant_prefix)
         return self.apic.lookupByClass('fvAEPg', propFilter=wcard)
 
     def get_bd(self, network_id):
@@ -332,6 +424,27 @@ class CobraManager(object):
 
     def get_tenant_name(self, network_id):
         return self.tenant_manager.get_tenant_name(network_id)
+
+    def sync_network(self, network):
+        self.clean_subnets(network)
+        self.clean_physdoms(network)
+        self.clean_bindings(network)
+        self.ensure_domain_and_epg(network.get('id'), external=network.get('router:external'))
+
+        for subnet in network.get('subnets'):
+            self.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
+
+        for binding in network.get('bindings'):
+            if binding.get('host_config'):
+                self.ensure_static_bindings_configured(network.get('id'),
+                                                       binding.get('host_config'),
+                                                       encap=binding.get('encap'))
+            else:
+                LOG.warning("No host configuration found in binding %s", binding)
+
+        for fixed_binding in network.get('fixed_bindings'):
+            encap = fixed_binding.get('segment_id', None)
+            self.ensure_static_bindings_configured(network.get('id'), fixed_binding, encap=encap)
 
     def clean_subnets(self, network):
         network_id = network['id']
@@ -423,13 +536,11 @@ class CobraManager(object):
         return gateway_ip
 
     def _get_address_scope_config(self, address_scope_name):
-
-        if address_scope_name not in self.address_scope_dict:
+        scope_config = ACI_CONFIG.get_address_scope_by_name(address_scope_name)
+        if scope_config is None:
             raise Exception("No address scope configuration found for address scope pool {} "
                             "no external configuration can be processed on ACI without configuration"
                             .format(address_scope_name))
-
-        scope_config = self.address_scope_dict[address_scope_name]
 
         return scope_config
 

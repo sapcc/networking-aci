@@ -19,7 +19,6 @@ import time
 from neutron_lib import constants as n_const
 from neutron_lib import context
 from neutron.agent import rpc as agent_rpc
-from neutron.common import config
 from neutron.common import topics
 from neutron.db import db_base_plugin_v2 as db
 from oslo_config import cfg
@@ -31,8 +30,7 @@ from stevedore import driver
 
 from networking_aci._i18n import _LI, _LE
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_manager
-from networking_aci.plugins.ml2.drivers.mech_aci import config as aci_config
-from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
 
 LOG = logging.getLogger(__name__)
@@ -46,56 +44,38 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                  minimize_polling=False,
                  quitting_rpc_timeout=None,
                  conf=None,
-                 aci_monitor_respawn_interval=(
-                         aci_constants.DEFAULT_ACI_RESPAWN)):
-
-        self.conf = aci_config.CONF
-
-        self.aci_config = self.conf.ml2_aci
-
-        self.fixed_bindings = aci_config.create_fixed_bindings_dictionary()
-
-        self.network_config = {
-            'hostgroup_dict': aci_config.create_hostgroup_dictionary(),
-            'address_scope_dict': aci_config.create_addressscope_dictionary(),
-            'fixed_bindings_dict': self.fixed_bindings
-        }
-
-        self.host_group_config = self.network_config['hostgroup_dict']
-        self.tenant_manager = driver.DriverManager(namespace='aci.tenant.managers', name=self.aci_config.tenant_manager,
+                 aci_monitor_respawn_interval=aci_const.DEFAULT_ACI_RESPAWN):
+        self.tenant_manager = driver.DriverManager(namespace='aci.tenant.managers', name=CONF.ml2_aci.tenant_manager,
                                                    invoke_on_load=True).driver
 
         self.db = db.NeutronDbPluginV2()
 
         self.aci_monitor_respawn_interval = aci_monitor_respawn_interval
         self.minimize_polling = minimize_polling,
-        self.polling_interval = self.aci_config.polling_interval
-        self.sync_batch_size = self.aci_config.sync_batch_size
+        self.polling_interval = CONF.ml2_aci.polling_interval
+        self.sync_batch_size = CONF.ml2_aci.sync_batch_size
         self.sync_marker = ""
 
-        self.sync_active = self.aci_config.sync_active
-        self.prune_orphans = self.aci_config.prune_orphans
+        self.sync_active = CONF.ml2_aci.sync_active
+        self.prune_orphans = CONF.ml2_aci.prune_orphans
         self.iter_num = 0
         self.run_daemon_loop = True
         self.quitting_rpc_timeout = quitting_rpc_timeout
         self.catch_sigterm = False
-        self.catch_sighup = False
 
-        host = self.conf.host
-        self.agent_id = 'aci-agent-%s' % host
+        self.agent_id = 'aci-agent-%s' % CONF.host
 
         self.setup_rpc()
 
         self.agent_state = {
             'binary': 'neutron-aci-agent',
-            'host': host,
+            'host': CONF.host,
             'topic': n_const.L2_AGENT_TOPIC,
             'configurations': {},
-            'agent_type': aci_constants.ACI_AGENT_TYPE,
+            'agent_type': aci_const.ACI_AGENT_TYPE,
             'start_flag': True}
 
-        self.aci_manager = cobra_manager.CobraManager(self.agent_rpc, self.network_config, self.aci_config,
-                                                      self.tenant_manager)
+        self.aci_manager = cobra_manager.CobraManager(self.agent_rpc, self.tenant_manager)
         self.connection.consume_in_threads()
 
     # Start RPC callbacks
@@ -127,6 +107,14 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.aci_manager.delete_subnet(subnet, external=external, address_scope_name=address_scope_name,
                                        last_on_network=last_on_network)
 
+    @log_helpers.log_method_call
+    def clean_baremetal_objects_agent(self, host_config):
+        self.aci_manager.clean_baremetal_objects(host_config)
+
+    @log_helpers.log_method_call
+    def sync_direct_mode_config_agent(self, host_config):
+        self.aci_manager.ensure_hostgroup_mode_config(host_config, source="via rpc api")
+
     # End RPC callbacks
 
     # Start Agent mechanics
@@ -139,9 +127,9 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.agent_rpc = rpc_api.AgentRpcClientAPI(self.context)
 
         # Define the listening consumers for the agent
-        consumers = [[aci_constants.ACI_TOPIC, topics.CREATE],
-                     [aci_constants.ACI_TOPIC, topics.UPDATE],
-                     [aci_constants.ACI_TOPIC, topics.DELETE]]
+        consumers = [[aci_const.ACI_TOPIC, topics.CREATE],
+                     [aci_const.ACI_TOPIC, topics.UPDATE],
+                     [aci_const.ACI_TOPIC, topics.DELETE]]
 
         self.connection = agent_rpc.create_consumers([self],
                                                      topics.AGENT,
@@ -165,22 +153,12 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
             LOG.info(_LI("Agent caught SIGTERM, quitting daemon loop."))
             self.run_daemon_loop = False
             self.catch_sigterm = False
-        if self.catch_sighup:
-            LOG.info(_LI("Agent caught SIGHUP, resetting."))
-            self.conf.reload_config_files()
-            config.setup_logging()
-            LOG.debug('Full set of CONF:')
-            self.conf.log_opt_values(LOG, logging.DEBUG)
-            self.catch_sighup = False
         return self.run_daemon_loop
 
     def _handle_sigterm(self, signum, frame):
         self.catch_sigterm = True
         if self.quitting_rpc_timeout:
             self.set_rpc_timeout(self.quitting_rpc_timeout)
-
-    def _handle_sighup(self, signum, frame):
-        self.catch_sighup = True
 
     # End Agent mechanics
 
@@ -260,32 +238,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                         for network in neutron_networks:
                             try:
-                                self.aci_manager.clean_subnets(network)
-                                self.aci_manager.clean_physdoms(network)
-                                self.aci_manager.clean_bindings(network)
-
-                                self.aci_manager.ensure_domain_and_epg(network.get('id'),
-                                                                       external=network.get('router:external'))
-
-                                for subnet in network.get('subnets'):
-                                    self.aci_manager.create_subnet(subnet,
-                                                                   network.get('router:external'),
-                                                                   subnet.get('address_scope_name'))
-
-                                for binding in network.get('bindings'):
-                                    if binding.get('host_config'):
-                                        self.aci_manager.ensure_static_bindings_configured(network.get('id'),
-                                                                                           binding.get('host_config'),
-                                                                                           encap=binding.get('encap'))
-                                    else:
-                                        LOG.warning("No host configuration found in binding %s", binding)
-
-                                fixed_bindings = network.get('fixed_bindings')
-
-                                for fixed_binding in fixed_bindings:
-                                    encap = fixed_binding.get('segment_id', None)
-                                    self.aci_manager.ensure_static_bindings_configured(network.get('id'), fixed_binding,
-                                                                       encap=encap)
+                                self.aci_manager.sync_network(network)
                             except Exception:
                                 LOG.exception("Error while attempting to apply configuration to network %s",
                                               network.get('id'))
@@ -302,6 +255,4 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         # Start everything.
         LOG.info(_LI("ACI Agent initialized successfully, now running... "))
         signal.signal(signal.SIGTERM, self._handle_sigterm)
-        if hasattr(signal, 'SIGHUP'):
-            signal.signal(signal.SIGHUP, self._handle_sighup)
-            self.rpc_loop()
+        self.rpc_loop()

@@ -11,21 +11,20 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-import ast
-
 from neutron_lib import context
+from neutron_lib import constants as n_const
 from neutron_lib.plugins.ml2 import api
-from neutron.db import api as db_api
-from neutron.db.models import segment as segment_model
 from neutron.common import rpc as n_rpc
-from neutron.plugins.ml2 import models
 from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
 
 from networking_aci._i18n import _LI, _LW
+from networking_aci.extensions.acioperations import Acioperations  # noqa, import enables extension
 from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
-from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci import common
+from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG, CONF
+from networking_aci.plugins.ml2.drivers.mech_aci.trunk import ACITrunkDriver
 import rpc_api
 
 LOG = logging.getLogger(__name__)
@@ -36,14 +35,14 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         LOG.info(_LI("ACI mechanism driver initializing..."))
         self.topic = None
         self.conn = None
-        self.network_config = common.get_network_config()
-        self.host_group_config = self.network_config['hostgroup_dict']
-        self.allocations_manager = allocations.AllocationsManager(self.network_config)
+        self.allocations_manager = allocations.AllocationsManager()
 
         self.db = common.DBPlugin()
+        ACI_CONFIG.db = self.db
         self.context = context.get_admin_context_without_session()
         self.rpc_notifier = rpc_api.ACIRpcClientAPI(self.context)
         self.start_rpc_listeners()
+        self.trunk_driver = ACITrunkDriver.create()
 
     def initialize(self):
         pass
@@ -58,7 +57,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
     def start_rpc_listeners(self):
         """Start the RPC loop to let the plugin communicate with agents."""
         self._setup_rpc()
-        self.topic = aci_constants.ACI_TOPIC
+        self.topic = aci_const.ACI_TOPIC
         self.conn = n_rpc.create_connection()
         self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
 
@@ -66,56 +65,114 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
     def bind_port(self, context):
         port = context.current
-        network = context.network.current
-        network_id = network['id']
-        host = context.host
-        binding_profile = context.current.get('binding:profile')
-        switch = CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
+        host = common.get_host_from_profile(context.current.get('binding:profile'), context.host)
 
-        if switch:
-            host = switch
+        LOG.debug("Using binding host %s for binding port %s", host, port['id'])
+        hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(host)
 
-        LOG.info("Using binding host %s for binding port %s", host, port['id'])
-        host_group_name, host_config = self._host_or_host_group(host)
-
-        if not host_config:
-            return False
-
-        segment_type = host_config.get('segment_type', 'vlan')
-        segment_physnet = host_config.get('physical_network')
-        if not segment_physnet:
-            LOG.error("Cannot bind port %s: Hostgroup %s has no physical_network set, cannot allocate segment",
-                      port['id'], host_group_name)
+        if not hostgroup:
+            LOG.warning("No aci config found for binding host %s while binding port %s", host, port['id'])
             return
 
+        if len(context.segments_to_bind) < 1:
+            LOG.warning("No segments found for port %s with host %s - very unusual", port['id'], host)
+            return
+
+        # hierarchical or direct?
+        if not context.binding_levels:
+            self._bind_port_hierarchical(context, port, hostgroup_name, hostgroup)
+        elif hostgroup['direct_mode'] and \
+                hostgroup['hostgroup_mode'] in (aci_const.MODE_BAREMETAL, aci_const.MODE_INFRA):
+            # direct binding for a) baremetal on aci and b) infra mode (2nd level)
+            self._bind_port_direct(context, port, hostgroup_name, hostgroup)
+
+    def _bind_port_hierarchical(self, context, port, hostgroup_name, hostgroup):
+        # find the top segment (no physnet, type vxlan); there should be only one, but who knows
         for segment in context.segments_to_bind:
-            if context.binding_levels is None:
-                # For now we assume only two levels in hierarchy. The top level VXLAN/VLAN and
-                # one dynamically allocated segment at level 1
-                level = 1
-                allocation = self.allocations_manager.allocate_segment(network, segment_physnet, level, host_config)
+            if segment[api.NETWORK_TYPE] == 'vxlan' and segment['physical_network'] is None:
+                break
+        else:
+            LOG.error("No usable segment found for hierarchical portbinding, candidates were: %s",
+                      context.segments_to_bind)
+            return
 
-                if not allocation:
-                    LOG.error("Binding failed, could not allocate a segment for further binding levels "
-                              "for port %(port)s",
-                              {'port': context.current['id']})
-                    return False
+        segment_physnet = hostgroup.get('physical_network')
+        if not segment_physnet:
+            LOG.error("Cannot bind port %s: Hostgroup %s has no physical_network set, cannot allocate segment",
+                      port['id'], hostgroup_name)
+            return
 
+        # For now we assume only two levels in hierarchy. The top level VXLAN/VLAN and
+        # one dynamically allocated segment at level 1
+        level = 1
+
+        network = context.network.current
+        segment_type = hostgroup.get('segment_type', 'vlan')
+        if hostgroup.get('hostgroup_mode') != aci_const.MODE_BAREMETAL:
+            # VM mode
+            allocation = self.allocations_manager.allocate_segment(network, segment_physnet, level, hostgroup)
+            segmentation_id = allocation.segmentation_id
+            segment_id = allocation.segment_id
+        else:
+            # baremetal objects use a different physnet and gets allocated to its own segment
+            if aci_const.TRUNK_PROFILE in port['binding:profile']:
+                segmentation_id = port['binding:profile'][aci_const.TRUNK_PROFILE].get('segmentation_id', 1)
+            else:
+                segmentation_id = 1  # use vlan 1 access
+            allocation = self.allocations_manager.allocate_baremetal_segment(network, hostgroup, segment_physnet, level,
+                                                                             segmentation_id)
+            segment_id = allocation.id
+
+        if not allocation:
+            LOG.error("Binding failed, could not allocate a segment for further binding levels "
+                      "for port %(port)s",
+                      {'port': context.current['id']})
+            return
+
+        next_segment = {
+            'segmentation_id': segmentation_id,
+            'network_id': network['id'],
+            'network_type': segment_type,
+            'physical_network': segment_physnet,
+            'id': segment_id,
+            'is_dynamic': False,
+            'segment_index': level
+        }
+
+        LOG.info("Next segment to bind for port %s on %s: %s", port['id'], segment["id"], next_segment)
+        if not hostgroup['direct_mode']:
+            # for direct mode the rpc call will be made by the next level binding
+            ACI_CONFIG.clean_bindings(hostgroup, allocation.segment_id, level=level)
+            self.rpc_notifier.bind_port(port, hostgroup, segment, next_segment)
+        context.continue_binding(segment["id"], [next_segment])
+
+    def _bind_port_direct(self, context, port, hostgroup_name, hostgroup):
+        segment_physnet = hostgroup.get('physical_network')
+
+        for segment in context.segments_to_bind:
+            if segment[api.PHYSICAL_NETWORK] == segment_physnet:
+                vif_details = {
+                    'aci_directly_bound': True,
+                }
                 next_segment = {
-                    'segmentation_id': allocation.segmentation_id,
-                    'network_id': network_id,
-                    'network_type': segment_type,
-                    'physical_network': segment_physnet,
-                    'id': allocation.segment_id,
-                    'is_dynamic': False,
-                    'segment_index': level
+                    'segmentation_id': segment['segmentation_id'],
                 }
 
-                LOG.info("Next segment to bind for port %s: %s", port['id'], next_segment)
-                self.rpc_notifier.bind_port(port, host_config, segment, next_segment)
-                context.continue_binding(segment["id"], [next_segment])
+                if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and segment['segmentation_id'] != 1:
+                    port_type_str = "trunk port"
+                else:
+                    port_type_str = "access port"
 
-                return True
+                self.rpc_notifier.bind_port(port, hostgroup, segment, next_segment)
+                context.set_binding(segment['id'], aci_const.VIF_TYPE_ACI, vif_details, n_const.ACTIVE)
+                LOG.info("Directly bound port %s to hostgroup %s with segment %s vlan %s (%s)",
+                         port['id'], hostgroup_name, segment['id'], segment['segmentation_id'], port_type_str)
+
+                return
+
+        LOG.error("ACI driver tried to directly bind port %s to segment %s, but it could not be found, options: %s",
+                  port['id'], segment_physnet,
+                  ", ".join(seg[api.PHYSICAL_NETWORK] for seg in context.segments_to_bind))
 
     # Network callbacks
     def create_network_postcommit(self, context):
@@ -166,93 +223,97 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                                         last_on_network=last_on_network)
 
     # Port callbacks
+    def update_port_postcommit(self, context):
+        orig_host = common.get_host_from_profile(context.original['binding:profile'],
+                                                 context.original['binding:host_id'])
+        curr_host = common.get_host_from_profile(context.current['binding:profile'],
+                                                 context.current['binding:host_id'])
+
+        if orig_host != curr_host:
+            # binding host differs, find out if:
+            # * old binding host is valid
+            # * new binding host is either invalid or valid AND belongs to a diffrent hostgroup
+            orig_hostgroup_name, orig_hostgroup = ACI_CONFIG.get_hostgroup_by_host(orig_host)
+            curr_hostgroup_name, curr_hostgroup = ACI_CONFIG.get_hostgroup_by_host(curr_host)
+
+            if orig_hostgroup and \
+                    (curr_hostgroup is None or (curr_hostgroup and orig_hostgroup_name != curr_hostgroup_name)):
+                if CONF.ml2_aci.handle_port_update_for_non_baremetal or \
+                        orig_hostgroup['direct_mode'] and orig_hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
+                    # handle port update
+                    LOG.info('Calling cleanup for port %s (hostgroup transition from "%s" to "%s")',
+                             context.current['id'], orig_hostgroup_name, curr_hostgroup_name)
+
+                    # apparently context.network.original is not set, but the ml2_plugin always fetches
+                    # the original port's network, so context.current should work. nevertheless, safeguarding this
+                    if context.original['network_id'] != context.network.current['id']:
+                        LOG.error("Port %s original port has network id %s, context.network.current is %s, omitting!",
+                                  context.current['id'], context.current['network_id'], context.network.current['id'])
+                        return
+
+                    self.cleanup_segment_if_needed(context._plugin_context, context.original, context.network.current,
+                                                   context.original_binding_levels,
+                                                   context.original_bottom_bound_segment)
+                else:
+                    LOG.info("Ignoring host transition for port %s from host %s hostgroups %s to host %s hostgroup %s",
+                             context.current['id'], orig_host, orig_hostgroup_name, curr_host, curr_hostgroup_name)
+
     def delete_port_postcommit(self, context):
         # For now we look only at the bottom bound segment - works for this use case
         # but will need some review if we ever have several dynamically bound segements
         # network_id = context.network.current['id']
-        segment = context.bottom_bound_segment
-        host = context.host
-        binding_profile = context.current.get('binding:profile')
-        switch = CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
+        self.cleanup_segment_if_needed(context._plugin_context, context.current, context.network.current,
+                                       context.binding_levels, context.bottom_bound_segment)
 
-        if switch:
-            host = switch
-        _, host_config = self._host_or_host_group(host)
+    def cleanup_segment_if_needed(self, context, port, network, binding_levels, segment):
+        if not segment:
+            return
 
-        if not host_config:
-            return False
+        # only handle cleanup for ports bound by the aci driver as top segment
+        if not binding_levels or binding_levels[0][api.BOUND_DRIVER] != aci_const.ACI_DRIVER_NAME:
+            return
 
-        if segment:
-            # Get segment from ml2_port_binding_levels based on segment_id and host
-            # if no ports on this segment for host we can remove the aci allocation
-            released = self.allocations_manager.release_segment(context.network.current, host_config, 1, segment)
+        host = common.get_host_from_profile(port['binding:profile'], port['binding:host_id'])
+        _, hostgroup = ACI_CONFIG.get_hostgroup_by_host(host)
+        if not hostgroup:
+            return
 
-            # Call to ACI to delete port if the segment is released i.e.
-            # port is the last for the network one on the host
-            if released:
-                # Check if physical domain should be cleared
-                clearable_phys_doms = self._get_clearable_phys_doms(context.network.current, segment, host_config)
-                self.rpc_notifier.delete_port(context.current, host_config, clearable_phys_doms)
+        # Get segment from ml2_port_binding_levels based on segment_id and host
+        # if no ports on this segment for host we can remove the aci allocation
+        released = self.allocations_manager.release_segment(network, hostgroup, 1, segment)
+        if not released:
+            return
 
-    def _get_clearable_phys_doms(self, network, local_segment, host_config):
-        # start out with all physdoms in use by the local segment
-        clearable = set(host_config['physical_domain'])
+        # Call to ACI to delete port if the segment is released i.e.
+        # port is the last for the network one on the host
+        # Check if physical domain should be cleared
+        clearable_physdoms = self._get_clearable_phys_doms(context, network['id'],
+                                                           segment, hostgroup)
+        self.rpc_notifier.delete_port(port, hostgroup, clearable_physdoms)
 
-        # query out all binding_hosts (hosts) that are on any segment in this network that is not local_segment
-        # select from networksegments where network_id matches, local_segment id does not match
-        #   join with ml2_portbinding_levels, filter for level=1
-        #       get host
-        session = db_api.get_reader_session()
-        with session.begin():
-            other_bindings = (session.query(models.PortBindingLevel.host, models.PortBindingLevel.segment_id)
-                                     .join(segment_model.NetworkSegment,
-                                           segment_model.NetworkSegment.id == models.PortBindingLevel.segment_id)
-                                     .filter(segment_model.NetworkSegment.network_id == network['id'],
-                                             models.PortBindingLevel.level == 1,
-                                             models.PortBindingLevel.segment_id != local_segment['id'])
-                                     .distinct())
-
-        for other_binding in other_bindings:
-            _, other_binding_host_config = self._host_or_host_group(other_binding.host)
-            other_physdoms = set(other_binding_host_config['physical_domain'])
-            for physdom in clearable & other_physdoms:
+    def _get_clearable_phys_doms(self, context, network_id, local_segment, host_config):
+        clearable_physdoms = set(host_config['physical_domain'])
+        for other_segment in common.get_segments(context, network_id):
+            if other_segment['physical_network'] is None:
+                continue
+            other_physdoms = ACI_CONFIG.get_physdoms_by_physnet(other_segment['physical_network'])
+            if not other_physdoms:
+                LOG.warning("No config found for segment %s physical network %s in network %s",
+                            local_segment['id'], other_segment['physical_network'], network_id)
+                continue
+            other_physdoms = set(other_physdoms)
+            for physdom in clearable_physdoms & other_physdoms:
                 LOG.debug("Not clearing physdom %s from epg %s for segment %s as it is still in use by segment %s",
-                          physdom, network['id'], local_segment['id'], other_binding.segment_id)
-            clearable -= other_physdoms
-
-            if not clearable:
+                          physdom, network_id, local_segment['id'], other_segment['id'])
+            clearable_physdoms -= other_physdoms
+            if not clearable_physdoms:
                 break
 
         LOG.debug("Found %d clearable physdoms for network %s segment %s (%s)",
-                  len(clearable), network['id'], local_segment['id'], ", ".join(clearable) or "<none>")
+                  len(clearable_physdoms), network_id, local_segment['id'],
+                  ", ".join(clearable_physdoms) or "<none>")
 
-        return list(clearable)
-
-    def _host_or_host_group(self, host_id):
-        return common.get_host_or_host_group(host_id, self.host_group_config)
-
-    @staticmethod
-    def switch_from_local_link(binding_profile):
-        if binding_profile:
-            try:
-                if not isinstance(binding_profile, dict):
-                    binding_profile = ast.literal_eval(binding_profile)
-
-                lli = binding_profile.get('local_link_information')
-                # TODO validate assumption that we have 1 lli in list.
-                if lli and lli[0] and isinstance(lli[0], dict):
-                    switch = lli[0].get('switch_info', None) or lli[0].get('switch_id', None)
-                    if switch:
-                        LOG.info("Using link local information for binding host %s", switch)
-                        return switch
-                    else:
-                        LOG.error("Cannot determine switch for local link info %s in binding profile %s.",
-                                  lli[0], binding_profile)
-                else:
-                    LOG.error("Local information %s is invalid in binding profile %s.",
-                              lli, binding_profile)
-            except ValueError:
-                LOG.info("binding Profile %s cannot be parsed", binding_profile)
+        return clearable_physdoms
 
     @staticmethod
     def _network_external(context):

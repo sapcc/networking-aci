@@ -17,3 +17,20 @@ from neutron_lib import exceptions
 
 class NoAllocationFoundInMaximumAllowedAttempts(exceptions.NeutronException):
     message = "No free allocation could be found within the maximum number of allowed attempts"
+
+
+class SegmentExistsWithDifferentSegmentationId(exceptions.NeutronException):
+    message = ("Segmentation id %(segmentation_id)s already in use by segment %(segment_id)s for "
+               "network %(network_id)s and physnet %(physnet)s")
+
+
+class ACIOpenStackConfigurationError(exceptions.NeutronException):
+    message = "%(reason)s"
+
+
+class TrunkHostgroupNotInBaremetalMode(exceptions.NeutronException):
+    message = "Cannot create trunk on for port %(port_id)s: Hostgroup %(hostgroup)s is not in baremetal mode"
+
+
+class TrunkCannotAllocateReservedVlan(exceptions.NeutronException):
+    message = "VLAN %(segmentation_id)s is reserved and cannot be allocated by users"

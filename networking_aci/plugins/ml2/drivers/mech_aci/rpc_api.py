@@ -18,16 +18,15 @@ from neutron_lib.exceptions import NetworkNotFound
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.extensions import tagging
-from neutron.plugins.ml2 import db as ml2_db
 from neutron.services.tag import tag_plugin
 from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
 import oslo_messaging
 from sqlalchemy.orm import exc as orm_exc
 
-import driver
 from networking_aci.plugins.ml2.drivers.mech_aci import common
-from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_constants
+from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 
 LOG = logging.getLogger(__name__)
 
@@ -52,6 +51,12 @@ class ACIRpcAPI(object):
     def delete_subnet(self, rpc_context, subnet, external, address_scope_name, last_on_network):
         self.delete_subnet_postcommit(subnet, external, address_scope_name, last_on_network)
 
+    def clean_baremetal_objects(self, rpc_context, host_config):
+        self.clean_baremetal_objects_agent(host_config)
+
+    def sync_direct_mode_config(self, rpc_context, host_config):
+        self.sync_direct_mode_config_agent(host_config)
+
 
 class AgentRpcCallback(object):
 
@@ -62,13 +67,7 @@ class AgentRpcCallback(object):
 
     @log_helpers.log_method_call
     def get_binding_count(self, rpc_context):
-        network_config = common.get_network_config()
-        bindings = network_config.get("hostgroup_dict", {})
-        host_groups = bindings.keys()
-        fixed_bindings = network_config.get("fixed_bindings_dict", {})
-        fixed_binding_networks = fixed_bindings.keys()
-
-        return len(host_groups) + len(fixed_binding_networks)
+        return len(ACI_CONFIG.hostgroups) + len(ACI_CONFIG.fixed_bindings)
 
     @log_helpers.log_method_call
     def get_network(self, rpc_context, network_id):
@@ -100,31 +99,7 @@ class AgentRpcCallback(object):
 
     def _get_network(self, network):
         start = time.time()
-        network_id = network.get('id')
-        host_group_config = common.get_network_config()['hostgroup_dict']
-        fixed_binding_config = common.get_network_config()['fixed_bindings_dict']
-        segments = common.get_segments(self.context, network_id)
-
-        try:
-            tags = self.tag_plugin.get_tags(self.context, 'networks', network_id).get('tags', [])
-        except tagging.TagResourceNotFound:
-            LOG.warning("Cannot find network {} while attempting to check static binding tag".format(network_id))
-            tags = []
-
-        network_fixed_bindings = []
-        for tag in tags:
-            network_fixed_binding = fixed_binding_config.get(tag, None)
-            if network_fixed_binding:
-                network_fixed_bindings.append(network_fixed_binding)
-
-        segment_dict = {}
-        for segment in segments:
-            segment_dict[segment.get('id')] = {
-                'id': segment.get('id'),
-                'segmentation_id': segment.get('segmentation_id'),
-                'physical_network': segment.get('physical_network'),
-                'network_type': segment.get('network_type')
-            }
+        network_id = network['id']
 
         result = {
             'id': network_id,
@@ -132,9 +107,22 @@ class AgentRpcCallback(object):
             'router:external': network.get('router:external'),
             'subnets': [],
             'bindings': [],
-            'fixed_bindings': network_fixed_bindings
+            'fixed_bindings': [],
         }
 
+        # fixed bindings
+        try:
+            tags = self.tag_plugin.get_tags(self.context, 'networks', network_id).get('tags', [])
+        except tagging.TagResourceNotFound:
+            LOG.warning("Cannot find network {} while attempting to check static binding tag".format(network_id))
+            tags = []
+
+        for tag in tags:
+            network_fixed_binding = ACI_CONFIG.get_fixed_binding_by_tag(tag)
+            if network_fixed_binding:
+                result['fixed_bindings'].append(network_fixed_binding)
+
+        # subnets
         subnets = self.db.get_subnets_by_network(self.context, network.get('id'))
         for subnet in subnets:
             pool_id = subnet.get('subnetpool_id')
@@ -150,41 +138,36 @@ class AgentRpcCallback(object):
                 'gateway_ip': subnet.get('gateway_ip')
             })
 
-        ports = self.db.get_ports_with_binding(self.context, network_id)
-        processed_hosts = []
+        # bindings
+        segments = common.get_segments(self.context, network_id)
+        segment_dict = {}
+        for segment in segments:
+            segment_dict[segment.get('id')] = segment
 
-        for port in ports:
-            port_binding = port.port_binding
-            binding_host = ml2_db.get_port_binding_host(self.context, port['id'])
-            config_host = port_binding.get('host')
+        processed_hostgroups = []
+        host_segments = self.db.get_hosts_on_network(self.context, network_id, level=1, with_segment=True)
+        for host, segment_id in host_segments:
+            hostgroup_name = ACI_CONFIG.get_hostgroup_name_by_host(host)
+            if not hostgroup_name or hostgroup_name in processed_hostgroups:
+                continue
 
-            if binding_host not in processed_hosts:
-                binding_profile = port_binding.get('profile')
-                if binding_profile:
-                    switch = driver.CiscoACIMechanismDriver.switch_from_local_link(binding_profile)
-                    if switch:
-                        config_host = switch
+            hostgroup = ACI_CONFIG.get_hostgroup(hostgroup_name, segment_id, level=1)
+            if not hostgroup:
+                LOG.error("Found hostgroup %s for host %s but not present in dictionary - will not be bound in %s",
+                          hostgroup_name, host, network_id)
+                continue
 
-                binding_levels = ml2_db.get_binding_levels(self.context, port['id'], binding_host)
-                host_id, host_config = common.get_host_or_host_group(config_host, host_group_config)
+            segment = segment_dict[segment_id]
+            result['bindings'].append({
+                'binding:host_id': host,
+                'host_config': hostgroup,
+                'encap': segment.get('segmentation_id'),
+                'network_type': segment.get('network_type'),
+                'physical_network': segment.get('physical_network')
+            })
+            processed_hostgroups.append(hostgroup_name)
 
-                if binding_levels:
-                    # for now we use binding level one
-                    for binding in binding_levels:
-                        if binding.level == 1:
-                            # Store one binding for each binding host
-                            segment = segment_dict.get(binding.segment_id)
-                            if segment:
-                                result['bindings'].append({
-                                    'binding:host_id': binding_host,
-                                    'host_config': host_config,
-                                    'encap': segment.get('segmentation_id'),
-                                    'network_type': segment.get('network_type'),
-                                    'physical_network': segment.get('physical_network')
-                                })
-                                processed_hosts.append(binding_host)
-
-        LOG.info("get network %s :  %s seconds", network_id, (time.time() - start))
+        LOG.info("get network %s: %0.2fs", network_id, (time.time() - start))
         return result
 
     @log_helpers.log_method_call
@@ -204,12 +187,12 @@ class ACIRpcClientAPI(object):
     version = '1.0'
 
     def __init__(self, rpc_context):
-        target = oslo_messaging.Target(topic=aci_constants.ACI_TOPIC, version='1.0')
+        target = oslo_messaging.Target(topic=aci_const.ACI_TOPIC, version='1.0')
         self.client = n_rpc.get_client(target)
         self.rpc_context = rpc_context
 
     def _topic(self, action=topics.CREATE, host=None):
-        return topics.get_topic_name(topics.AGENT, aci_constants.ACI_TOPIC, action, host)
+        return topics.get_topic_name(topics.AGENT, aci_const.ACI_TOPIC, action, host)
 
     def _fanout(self):
         return self.client.prepare(version=self.version, topic=self._topic(), fanout=True)
@@ -236,17 +219,23 @@ class ACIRpcClientAPI(object):
         self._fanout().cast(self.rpc_context, 'delete_subnet', subnet=subnet, external=external,
                             address_scope_name=address_scope_name, last_on_network=last_on_network)
 
+    def clean_baremetal_objects(self, host_config):
+        self._fanout().cast(self.rpc_context, 'clean_baremetal_objects', host_config=host_config)
+
+    def sync_direct_mode_config(self, host_config):
+        self._fanout().cast(self.rpc_context, 'sync_direct_mode_config', host_config=host_config)
+
 
 class AgentRpcClientAPI(object):
     version = '1.0'
 
     def __init__(self, rpc_context):
-        target = oslo_messaging.Target(topic=aci_constants.ACI_TOPIC, version='1.0')
+        target = oslo_messaging.Target(topic=aci_const.ACI_TOPIC, version='1.0')
         self.client = n_rpc.get_client(target)
         self.rpc_context = rpc_context
 
     def _fanout(self):
-        return self.client.prepare(version=self.version, topic=aci_constants.ACI_TOPIC, fanout=False)
+        return self.client.prepare(version=self.version, topic=aci_const.ACI_TOPIC, fanout=False)
 
     def get_network(self, network_id):
         return self._fanout().call(self.rpc_context, 'get_network', network_id=network_id)
