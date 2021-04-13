@@ -1,0 +1,6 @@
+.*.swp
+*.pyc
+__pycache__
+.tox/
+networking_aci.egg-info/
+.testrepository/
