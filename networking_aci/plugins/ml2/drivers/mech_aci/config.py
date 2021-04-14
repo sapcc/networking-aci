@@ -174,7 +174,7 @@ pc_policy_group_opts = [
     cfg.StrOpt("lldp_policy",
                default="LLDP_enable",
                help="Preprovisioned LLDP policy to use"),
-    cfg.StrOpt("lapc_policy",
+    cfg.StrOpt("lacp_policy",
                default="LACP_on_fast_suspend",
                help="Preprovisioned port channel policy to use"),
     cfg.StrOpt("mcp_policy",

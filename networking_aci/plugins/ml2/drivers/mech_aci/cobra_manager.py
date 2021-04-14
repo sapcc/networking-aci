@@ -227,7 +227,7 @@ class CobraManager(object):
             ('link_level_policy', infra.RsHIfPol, 'tnFabricHIfPolName'),
             ('cdp_policy', infra.RsCdpIfPol, 'tnCdpIfPolName'),
             ('lldp_policy', infra.RsLldpIfPol, 'tnLldpIfPolName'),
-            ('lapc_policy', infra.RsLacpPol, 'tnLacpLagPolName'),
+            ('lacp_policy', infra.RsLacpPol, 'tnLacpLagPolName'),
             ('mcp_policy', infra.RsMcpIfPol, 'tnMcpIfPolName'),
             ('monitoring_policy', infra.RsMonIfInfraPol, 'tnMonInfraPolName'),
             ('l2_policy', infra.RsL2IfPol, 'tnL2IfPolName'),
