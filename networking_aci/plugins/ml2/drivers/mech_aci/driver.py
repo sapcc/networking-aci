@@ -21,11 +21,11 @@ from oslo_log import helpers as log_helpers
 from networking_aci._i18n import _LI, _LW
 from networking_aci.extensions.acioperations import Acioperations  # noqa, import enables extension
 from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
-from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci import common
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG, CONF
+from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
 from networking_aci.plugins.ml2.drivers.mech_aci.trunk import ACITrunkDriver
-import rpc_api
 
 LOG = logging.getLogger(__name__)
 

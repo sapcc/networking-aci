@@ -35,7 +35,7 @@ def upgrade():
         sa.Column('hostgroup', sa.String(length=255), nullable=False),
         sa.Column('mode', sa.String(length=32), nullable=False),
         sa.Column('standard_attr_id', sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(['standard_attr_id'], [u'standardattributes.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['standard_attr_id'], ['standardattributes.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('hostgroup'),
         sa.UniqueConstraint('standard_attr_id'),
         mysql_engine='InnoDB'

@@ -24,8 +24,8 @@ class HashRingTenantManager(object):
                       "where n is the starting tenant key and m is the last tenant key managed")
             assert()
 
-        self._managed_range = range(start, stop + 1)
-        self.ring = hash_ring.HashRing(range(self.ring_size))
+        self._managed_range = list(range(start, stop + 1))
+        self.ring = hash_ring.HashRing(list(range(self.ring_size)))
 
     @property
     def managed_range(self):
