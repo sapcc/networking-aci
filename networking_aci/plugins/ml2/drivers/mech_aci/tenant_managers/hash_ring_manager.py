@@ -1,4 +1,4 @@
-import hash_ring
+import uhashring
 from oslo_config import cfg
 from oslo_log import log as logging
 
@@ -25,7 +25,7 @@ class HashRingTenantManager(object):
             assert()
 
         self._managed_range = list(range(start, stop + 1))
-        self.ring = hash_ring.HashRing(list(range(self.ring_size)))
+        self.ring = uhashring.HashRing(list(range(self.ring_size)), hash_fn='ketama', replicas=3)
 
     @property
     def managed_range(self):
