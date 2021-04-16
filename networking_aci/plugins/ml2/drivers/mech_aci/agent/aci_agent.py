@@ -16,10 +16,10 @@
 import signal
 import time
 
+from neutron_lib.agent import topics
 from neutron_lib import constants as n_const
 from neutron_lib import context
 from neutron.agent import rpc as agent_rpc
-from neutron.common import topics
 from neutron.db import db_base_plugin_v2 as db
 from oslo_config import cfg
 from oslo_log import helpers as log_helpers

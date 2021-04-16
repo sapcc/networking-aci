@@ -13,10 +13,10 @@
 #    under the License.
 import time
 
+from neutron_lib.agent import topics
 from neutron_lib import context
 from neutron_lib.exceptions import NetworkNotFound
-from neutron.common import rpc as n_rpc
-from neutron.common import topics
+from neutron_lib import rpc as n_rpc
 from neutron.extensions import tagging
 from neutron.services.tag import tag_plugin
 from oslo_log import log as logging

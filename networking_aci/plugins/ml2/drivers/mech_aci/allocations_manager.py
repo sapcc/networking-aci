@@ -14,7 +14,7 @@
 #    under the License.
 import random
 
-from neutron.db import api as db_api
+from neutron_lib.db import api as db_api
 from neutron.db.models import segment as ml2_models
 from neutron.plugins.ml2 import models
 from oslo_config import cfg
