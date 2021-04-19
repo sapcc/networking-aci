@@ -1,13 +1,13 @@
 import logging
 
-from neutron_lib.callbacks import events, registry
+from neutron_lib.callbacks import events, registry, resources
 from neutron_lib import constants as n_const
 from neutron_lib import context
 from neutron_lib.plugins import directory
 from neutron_lib.exceptions import NeutronException
 from neutron_lib.api.definitions import port as p_api
 from neutron_lib.api.definitions import portbindings
-from neutron.services.trunk import constants as trunk_const
+from neutron_lib.services.trunk import constants as trunk_const
 from neutron.services.trunk.drivers import base
 from oslo_config import cfg
 
@@ -25,7 +25,7 @@ SUPPORTED_INTERFACES = (
     aci_const.VIF_TYPE_ACI,
 )
 SUPPORTED_SEGMENTATION_TYPES = (
-    trunk_const.VLAN,
+    trunk_const.SEGMENTATION_TYPE_VLAN,
 )
 
 
@@ -42,7 +42,7 @@ class ACITrunkDriver(base.DriverBase):
         return cls(NAME, SUPPORTED_INTERFACES, SUPPORTED_SEGMENTATION_TYPES,
                    can_trunk_bound_port=True)
 
-    @registry.receives(trunk_const.TRUNK_PLUGIN, [events.AFTER_INIT])
+    @registry.receives(resources.TRUNK_PLUGIN, [events.AFTER_INIT])
     def register(self, resource, event, trigger, payload=None):
         super(ACITrunkDriver, self).register(resource, event, trigger, payload)
 
