@@ -16,6 +16,7 @@ import ast
 from copy import deepcopy
 
 from neutron_lib import context
+from neutron.conf import service as service_conf
 from oslo_config import cfg
 from oslo_log import log as logging
 
@@ -196,9 +197,8 @@ cli_opts = [
 ]
 
 cfg.CONF.register_opts(aci_opts, "ml2_aci")
-# cfg.CONF.register_cli_opts(cli_opts)
+service_conf.register_service_opts(service_conf.RPC_EXTRA_OPTS)
 CONF = cfg.CONF
-# CONF()
 
 
 class ACIConfig:
