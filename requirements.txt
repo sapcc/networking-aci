@@ -15,4 +15,5 @@ python-neutronclient
 neutron-lib # Apache-2.0
 uhashring>=2.1
 
-#apicapi>=1.0.6
+acicobra>=4.2-2.68
+acimodel>=4.2-2.68
