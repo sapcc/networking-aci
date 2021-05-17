@@ -124,7 +124,11 @@ class CobraClient(object):
                          .format(login_session.refreshTime, login_session.refreshTimeoutSeconds))
                 break
             except FALLBACK_EXCEPTIONS as exc:
-                LOG.info('%s, falling back to a new address', exc.message)
+                if hasattr(exc, 'message'):
+                    message = exc.message
+                else:
+                    message = str(exc)
+                LOG.info('%s, falling back to a new address', message)
                 self.api_base.rotate(-1)
                 LOG.info('New controller address: %s ', self.api_base[0])
 
