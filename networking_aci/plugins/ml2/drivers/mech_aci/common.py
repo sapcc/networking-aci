@@ -178,7 +178,7 @@ def get_host_from_profile(binding_profile, host):
 
 
 def get_set_from_ranges(ranges):
-    """Convert [(a, b), (c, d), ...] to a set of all numbers in these ranges"""
+    """Convert [(a, b), (c, d), ...] to a set of all numbers in these ranges (inclusive)"""
     result = set()
     for range_from, range_to in ranges:
         result |= set(range(range_from, range_to + 1))
