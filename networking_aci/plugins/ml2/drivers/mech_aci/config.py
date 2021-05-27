@@ -275,7 +275,7 @@ class ACIConfig:
         ranges = []
         for str_range in str_ranges:
             range_from, range_to = str_range.split(":")
-            ranges.append((int(range_from), int(range_to) + 1))
+            ranges.append((int(range_from), int(range_to)))
         return ranges
 
     def _parse_hostgroups(self):
