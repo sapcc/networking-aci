@@ -94,7 +94,7 @@ class ACITrunkDriver(base.DriverBase):
         LOG.info("Trunk create called, resource %s payload %s trunk id %s",
                  resource, payload, payload.trunk_id)
         self._bind_subports(ctx, parent, payload.current_trunk, payload.current_trunk.sub_ports)
-        payload.current_trunk.update(status=trunk_const.ACTIVE_STATUS)
+        payload.current_trunk.update(status=trunk_const.TRUNK_ACTIVE_STATUS)
 
     def trunk_delete(self, resource, event, trunk_plugin, payload):
         ctx, parent = self._get_context_and_parent_port(payload.original_trunk.port_id)
@@ -156,7 +156,7 @@ class ACITrunkDriver(base.DriverBase):
             self.core_plugin.update_port(ctx, subport.port_id, port_data)
 
         if len(trunk.sub_ports) > 0:
-            trunk.update(status=trunk_const.ACTIVE_STATUS)
+            trunk.update(status=trunk_const.TRUNK_ACTIVE_STATUS)
         else:
             # trunk is automatically set to DOWN on change. if we don't change that it will stay that way
             LOG.info("Last subport was removed from trunk %s, setting it to state DOWN", trunk.id)
