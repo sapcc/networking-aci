@@ -48,12 +48,12 @@ class ACITrunkDriver(base.DriverBase):
 
         self.core_plugin = directory.get_plugin()
 
-        registry.subscribe(self.trunk_check_valid, trunk_const.TRUNK, events.PRECOMMIT_CREATE)
-        registry.subscribe(self.trunk_create, trunk_const.TRUNK, events.AFTER_CREATE)
-        registry.subscribe(self.trunk_delete, trunk_const.TRUNK, events.AFTER_DELETE)
-        registry.subscribe(self.trunk_check_valid, trunk_const.SUBPORTS, events.PRECOMMIT_CREATE)
-        registry.subscribe(self.subport_create, trunk_const.SUBPORTS, events.AFTER_CREATE)
-        registry.subscribe(self.subport_delete, trunk_const.SUBPORTS, events.AFTER_DELETE)
+        registry.subscribe(self.trunk_check_valid, resources.TRUNK, events.PRECOMMIT_CREATE)
+        registry.subscribe(self.trunk_create, resources.TRUNK, events.AFTER_CREATE)
+        registry.subscribe(self.trunk_delete, resources.TRUNK, events.AFTER_DELETE)
+        registry.subscribe(self.trunk_check_valid, resources.SUBPORTS, events.PRECOMMIT_CREATE)
+        registry.subscribe(self.subport_create, resources.SUBPORTS, events.AFTER_CREATE)
+        registry.subscribe(self.subport_delete, resources.SUBPORTS, events.AFTER_DELETE)
 
     def _get_context_and_parent_port(self, parent_port_id):
         """Get admin context and parent port
