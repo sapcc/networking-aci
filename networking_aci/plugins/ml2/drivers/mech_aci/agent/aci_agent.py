@@ -86,9 +86,20 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                                            encap=next_segment['segmentation_id'])
 
     @log_helpers.log_method_call
-    def delete_port_postcommit(self, port, host_config, physdoms_to_clear):
+    def delete_port_postcommit(self, port, host_config, physdoms_to_clear, clearable_bm_entities=None,
+                               reset_bindings_to_infra=False):
         self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config, encap=1, delete=True,
                                                            physdoms_to_clear=physdoms_to_clear)
+
+        if reset_bindings_to_infra:
+            # sync infra mode - hostgroup is in baremetal mode so we have to override some values
+            host_config['hostgroup_mode'] = aci_const.MODE_INFRA
+            host_config['pc_policy_group'] = host_config['infra_pc_policy_group']
+            self.aci_manager.ensure_hostgroup_mode_config(host_config, source="via port delete cleanup")
+
+        if clearable_bm_entities:
+            for bm_entity in clearable_bm_entities:
+                self.aci_manager.clean_baremetal_objects(bm_entity)
 
     @log_helpers.log_method_call
     def create_network_postcommit(self, network, external):
@@ -108,8 +119,8 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                        last_on_network=last_on_network)
 
     @log_helpers.log_method_call
-    def clean_baremetal_objects_agent(self, host_config):
-        self.aci_manager.clean_baremetal_objects(host_config)
+    def clean_baremetal_objects_agent(self, resource_name):
+        self.aci_manager.clean_baremetal_objects(resource_name)
 
     @log_helpers.log_method_call
     def sync_direct_mode_config_agent(self, host_config):

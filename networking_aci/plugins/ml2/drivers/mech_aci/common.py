@@ -21,9 +21,11 @@ from neutron.db import models_v2
 from neutron.db.models import segment as segment_models
 from neutron.db import segments_db as ml2_db
 from neutron.plugins.ml2 import models as ml2_models
+import neutron.services.trunk.models as trunk_models
 from oslo_log import log as logging
 
 from networking_aci.db.models import HostgroupModeModel
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 
 
 LOG = logging.getLogger(__name__)
@@ -135,10 +137,97 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 hosts.add(host)
         return hosts
 
+    def get_hosts_on_physnet(self, context, physical_network, level=None, with_segment=False, with_segmentation=False):
+        """Get all binding hosts (from host or binding_profile) present on a network
+
+        By default a set of all hosts is returned. If with_segment or with_segmentation is specified then a set of
+        tuples is returned, containing the host, segment id (if requested) and segmentation id (if requested).
+        """
+        fields = [ml2_models.PortBinding.host, ml2_models.PortBinding.profile]
+        if with_segment:
+            fields.append(ml2_models.PortBindingLevel.segment_id)
+        if with_segmentation:
+            fields.append(segment_models.NetworkSegment.segmentation_id)
+        query = context.session.query(*fields)
+        query = query.join(ml2_models.PortBindingLevel,
+                           ml2_models.PortBinding.port_id == ml2_models.PortBindingLevel.port_id)
+        query = query.join(segment_models.NetworkSegment,
+                           ml2_models.PortBindingLevel.segment_id == segment_models.NetworkSegment.id)
+        query = query.filter(segment_models.NetworkSegment.physical_network == physical_network)
+        if level is not None:
+            query = query.filter(ml2_models.PortBindingLevel.level == level)
+
+        hosts = set()
+        for entry in query.all():
+            host = get_host_from_profile(entry.profile, entry.host)
+            if with_segment or with_segmentation:
+                row = [host]
+                if with_segment:
+                    row.append(entry.segment_id)
+                if with_segmentation:
+                    row.append(entry.segmentation_id)
+                hosts.add(tuple(row))
+            else:
+                hosts.add(host)
+        return hosts
+
     def get_segment_ids_by_physnet(self, context, physical_network):
         query = context.session.query(segment_models.NetworkSegment.id)
         query = query.filter(segment_models.NetworkSegment.physical_network == physical_network)
         return [seg.id for seg in query.all()]
+
+    def get_ports_on_network_by_physnet_prefix(self, context, network_id, physical_network_prefix):
+        # get all ports for a network that are on a segment with a physnet prefix
+        fields = [
+            segment_models.NetworkSegment.id, segment_models.NetworkSegment.physical_network,
+            models_v2.Port.id, models_v2.Port.project_id
+        ]
+        query = context.session.query(*fields)
+        query = query.filter(models_v2.Port.network_id == network_id)
+        query = query.join(ml2_models.PortBindingLevel, ml2_models.PortBindingLevel.port_id == models_v2.Port.id)
+        query = query.join(segment_models.NetworkSegment,
+                           ml2_models.PortBindingLevel.segment_id == segment_models.NetworkSegment.id)
+        query = query.filter(segment_models.NetworkSegment.physical_network.like('{}%'.format(physical_network_prefix)))
+
+        result = []
+        for entry in query.all():
+            result.append({
+                'segment_id': entry[0],
+                'physical_network': entry[1],
+                'port_id': entry[2],
+                'project_id': entry[3],
+            })
+
+        return result
+
+    def get_bound_projects_by_physnet_prefix(self, context, physical_network_prefix):
+        # get all projects that have a port bound to a segment with this prefix
+        query = context.session.query(models_v2.Port.project_id)
+        query = query.join(ml2_models.PortBindingLevel, ml2_models.PortBindingLevel.port_id == models_v2.Port.id)
+        query = query.join(segment_models.NetworkSegment,
+                           ml2_models.PortBindingLevel.segment_id == segment_models.NetworkSegment.id)
+        query = query.filter(segment_models.NetworkSegment.physical_network.like('{}%'.format(physical_network_prefix)))
+        query = query.distinct()
+
+        return [entry.project_id for entry in query.all()]
+
+    def get_trunk_vlan_usage_on_project(self, context, project_id, segmentation_id=None):
+        # return vlan --> networks mapping for aci trunk ports inside a project
+        query = context.session.query(trunk_models.SubPort.segmentation_id, models_v2.Port.network_id)
+        query = query.filter(models_v2.Port.project_id == project_id)
+        query = query.join(trunk_models.SubPort, trunk_models.SubPort.port_id == models_v2.Port.id)
+        query = query.join(ml2_models.PortBinding, ml2_models.PortBinding.port_id == models_v2.Port.id)
+        query = query.filter(ml2_models.PortBinding.vif_type == aci_const.VIF_TYPE_ACI)
+        if segmentation_id:
+            query = query.filter(trunk_models.SubPort.segmentation_id == segmentation_id)
+        query = query.distinct()
+
+        # we only expect there to be one entry per segmentation id, but keep a list in case something goes wrong
+        vlan_map = {}
+        for entry in query.all():
+            vlan_map.setdefault(entry[0], set()).add(entry[1])
+
+        return vlan_map
 
 
 def get_segments(context, network_id):
