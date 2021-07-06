@@ -16,8 +16,11 @@ from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkHostgroupNotInBaremetalMode
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkCannotAllocateReservedVlan
+from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkSegmentationIdNotInAllowedRange
+from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkSegmentationNotConsistentInProject
 
 
+CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 
 NAME = 'aci'
@@ -82,9 +85,30 @@ class ACITrunkDriver(base.DriverBase):
         if not (hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL):
             raise TrunkHostgroupNotInBaremetalMode(port_id=payload.current_trunk.port_id, hostgroup=hostgroup_name)
 
+        vlan_map = ACI_CONFIG.db.get_trunk_vlan_usage_on_project(ctx, parent['project_id'])
+        bm_access_ranges = common.get_set_from_ranges(hostgroup['baremetal_access_vlan_ranges'])
         for subport in payload.subports:
-            if subport.segmentation_id in ACI_CONFIG.baremetal_reserved_vlans:
+            if subport.segmentation_id in ACI_CONFIG.baremetal_reserved_vlans or \
+                    subport.segmentation_id in bm_access_ranges:
                 raise TrunkCannotAllocateReservedVlan(segmentation_id=subport.segmentation_id)
+
+            # check that we are part of the actual allocated vlan pool
+            if subport.segmentation_id not in range(CONF.ml2_aci.baremetal_encap_blk_start,
+                                                    CONF.ml2_aci.baremetal_encap_blk_end):
+                raise TrunkSegmentationIdNotInAllowedRange(segmentation_id=subport.segmentation_id,
+                                                           segmentation_start=CONF.ml2_aci.baremetal_encap_blk_start,
+                                                           segmentation_end=CONF.ml2_aci.baremetal_encap_blk_end)
+
+            # check if any subport's segmentation id violates vlan consistency
+            # --> in the subport's project no other network is allowed to use the segmentation id
+            if subport.segmentation_id in vlan_map:
+                port = self.core_plugin.get_port(ctx, subport.port_id)
+                nets = vlan_map[subport.segmentation_id]
+                if nets and port['network_id'] not in nets:
+                    raise TrunkSegmentationNotConsistentInProject(segmentation_id=subport.segmentation_id,
+                                                                  project_id=parent['project_id'],
+                                                                  port_id=subport.port_id,
+                                                                  network_id=port['network_id'])
 
     def trunk_create(self, resource, event, trunk_plugin, payload):
         ctx, parent = self._get_context_and_parent_port(payload.current_trunk.port_id)
@@ -155,7 +179,8 @@ class ACITrunkDriver(base.DriverBase):
                 }
             self.core_plugin.update_port(ctx, subport.port_id, port_data)
 
-        if len(trunk.sub_ports) > 0:
+        num_deleted_subports = len(subports) if delete else 0
+        if len(trunk.sub_ports) - num_deleted_subports > 0:
             trunk.update(status=trunk_const.TRUNK_ACTIVE_STATUS)
         else:
             # trunk is automatically set to DOWN on change. if we don't change that it will stay that way

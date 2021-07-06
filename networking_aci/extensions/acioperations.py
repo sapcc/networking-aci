@@ -184,31 +184,24 @@ class HostgroupModeController(wsgi.Controller):
                                                "present in segment {}"
                                                .format(host, segment_id))
 
-        # cleanup old baremetal objects when switching away from baremetal mode
-        baremetal_bindings_cleaned = False
-        if hg_config['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
-            LOG.info("Cleaning baremetal objects for %s from device", hostgroup_name)
-            try:
-                self.rpc_notifier.clean_baremetal_objects(hg_config)
-                baremetal_bindings_cleaned = True
-            except Exception:
-                LOG.exception("Could not clean baremetal bindings from ACI, cleaning will have to be done manually")
-
         if self.db.set_hostgroup_mode(ctx, hostgroup_name, new_mode):
             LOG.info("Hostgroup %s set to mode %s", hostgroup_name, new_mode)
 
             hg_config = ACI_CONFIG.get_hostgroup(hostgroup_name)
             aci_objects_update_succeeded = False
-            try:
-                # switching policy group of port selectors, etc.
-                self.rpc_notifier.sync_direct_mode_config(hg_config)
+            if hg_config['hostgroup_mode'] == aci_const.MODE_INFRA:
+                # on switch from baremetal --> infra: switching policy group of port selectors, etc.
+                try:
+                    self.rpc_notifier.sync_direct_mode_config(hg_config)
+                    aci_objects_update_succeeded = True
+                except Exception:
+                    LOG.exception("Could not update bindings on ACI, rpc call failed")
+            else:
+                # nothing to update, huge success
                 aci_objects_update_succeeded = True
-            except Exception:
-                LOG.exception("Could not update bindings on ACI, rpc call failed")
 
             return {
                 "success": True,
-                "baremetal_bindings_cleaned": baremetal_bindings_cleaned,
                 "aci_objects_update_succeeded": aci_objects_update_succeeded,
             }
         else:

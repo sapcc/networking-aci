@@ -13,6 +13,7 @@
 #    under the License.
 from neutron_lib import context
 from neutron_lib import constants as n_const
+from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins.ml2 import api
 from neutron_lib import rpc as n_rpc
 from oslo_log import log as logging
@@ -35,9 +36,9 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         LOG.info(_LI("ACI mechanism driver initializing..."))
         self.topic = None
         self.conn = None
-        self.allocations_manager = allocations.AllocationsManager()
-
         self.db = common.DBPlugin()
+        self.allocations_manager = allocations.AllocationsManager(self.db)
+
         ACI_CONFIG.db = self.db
         self.context = context.get_admin_context_without_session()
         self.rpc_notifier = rpc_api.ACIRpcClientAPI(self.context)
@@ -78,6 +79,11 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             LOG.warning("No segments found for port %s with host %s - very unusual", port['id'], host)
             return
 
+        # direct baremetal-on-aci needs to be annotated with physnet (and other stuff)
+        if hostgroup['direct_mode']:
+            ACI_CONFIG.annotate_baremetal_info(hostgroup, context.network.current['id'],
+                                               override_project_id=port['project_id'])
+
         # hierarchical or direct?
         if not context.binding_levels:
             self._bind_port_hierarchical(context, port, hostgroup_name, hostgroup)
@@ -115,13 +121,26 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             segment_id = allocation.segment_id
         else:
             # baremetal objects use a different physnet and gets allocated to its own segment
+            # check that no baremetal-on-aci port from another project is in this network
+            segment_prefix = "{}-".format(CONF.ml2_aci.baremetal_resource_prefix)
+            for seg_port in self.db.get_ports_on_network_by_physnet_prefix(context._plugin_context,
+                                                                           network['id'], segment_prefix):
+                if seg_port['project_id'] != port['project_id']:
+                    msg = ("Cannot bind port {}: Hostgroup {} has baremetal port {} belonging to project {}, "
+                           "new port is from project {} - aborting binding"
+                           .format(port['id'], hostgroup['name'], seg_port['port_id'], seg_port['project_id'],
+                                   port['project_id']))
+                    LOG.error(msg)
+                    raise n_exc.NeutronException(msg)
+
+            ACI_CONFIG.annotate_baremetal_info(hostgroup, network['id'], override_project_id=port['project_id'])
             if aci_const.TRUNK_PROFILE in port['binding:profile']:
                 segmentation_id = port['binding:profile'][aci_const.TRUNK_PROFILE].get('segmentation_id', 1)
             else:
-                segmentation_id = 1  # use vlan 1 access
-            allocation = self.allocations_manager.allocate_baremetal_segment(network, hostgroup, segment_physnet, level,
-                                                                             segmentation_id)
+                segmentation_id = None  # let the allocater choose a vlan
+            allocation = self.allocations_manager.allocate_baremetal_segment(network, hostgroup, level, segmentation_id)
             segment_id = allocation.id
+            segmentation_id = allocation.segmentation_id
 
         if not allocation:
             LOG.error("Binding failed, could not allocate a segment for further binding levels "
@@ -158,7 +177,12 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                     'segmentation_id': segment['segmentation_id'],
                 }
 
-                if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and segment['segmentation_id'] != 1:
+                # annotate baremetal resource name for baremetal group (if necessary)
+                network = context.network.current
+                ACI_CONFIG.annotate_baremetal_info(hostgroup, network['id'], override_project_id=port['project_id'])
+
+                if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and \
+                        aci_const.TRUNK_PROFILE in port['binding:profile']:
                     port_type_str = "trunk port"
                 else:
                     port_type_str = "access port"
@@ -279,24 +303,54 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             return
 
         # Get segment from ml2_port_binding_levels based on segment_id and host
-        # if no ports on this segment for host we can remove the aci allocation
+        # if no ports on this segment for host we can remove the aci allocation.
+        # In baremetal mode we need to call cleanup when the hostgroup is no longer on the physnet
         released = self.allocations_manager.release_segment(network, hostgroup, 1, segment)
-        if not released:
+        if not released and not (hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL):
             return
 
         # Call to ACI to delete port if the segment is released i.e.
         # port is the last for the network one on the host
         # Check if physical domain should be cleared
-        clearable_physdoms = self._get_clearable_phys_doms(context, network['id'],
-                                                           segment, hostgroup)
-        self.rpc_notifier.delete_port(port, hostgroup, clearable_physdoms)
+        ACI_CONFIG.annotate_baremetal_info(hostgroup, network['id'], override_project_id=port['project_id'])
+        clearable_physdoms = []
+        if released:
+            # physdoms will only be removed on segment removal
+            clearable_physdoms = self._get_clearable_phys_doms(context, network['id'],
+                                                               segment, hostgroup, port['project_id'])
 
-    def _get_clearable_phys_doms(self, context, network_id, local_segment, host_config):
+        clearable_bm_entities = []
+        reset_bindings_to_infra = False
+        if hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
+            # if this hostgroup has hosts left we cancel the removal
+            hosts_on_network = self.db.get_hosts_on_network(context, network['id'], level=1)
+            if any(host in hosts_on_network for host in hostgroup['hosts']):
+                return
+
+            # if this hostgroup has no host left on the physnet we can reset the VPC/bindings
+            hosts_on_physnet = self.db.get_hosts_on_physnet(context, hostgroup['physical_network'], level=1)
+            if not any(host in hosts_on_physnet for host in hostgroup['hosts']):
+                reset_bindings_to_infra = True
+
+            # if this port is the last from a project we clear out the bm entities on ACI
+            seg_prefix = ACI_CONFIG.baremetal_resource_prefix
+            projects_on_physnets = self.db.get_bound_projects_by_physnet_prefix(context, seg_prefix)
+            if port['project_id'] not in projects_on_physnets:
+                clearable_bm_entities.append(ACI_CONFIG.gen_bm_resource_name(port['project_id']))
+
+        LOG.debug("Sending RPC delete_port for port %s hostgroup %s with clearable physdoms %s "
+                  "clearable bm-entities %s and reset-bindings-to-infra %s",
+                  port['id'], hostgroup['name'], clearable_physdoms, clearable_bm_entities, reset_bindings_to_infra)
+        self.rpc_notifier.delete_port(port, hostgroup, clearable_physdoms, clearable_bm_entities,
+                                      reset_bindings_to_infra)
+
+    def _get_clearable_phys_doms(self, context, network_id, local_segment, host_config, project_id):
         clearable_physdoms = set(host_config['physical_domain'])
         for other_segment in common.get_segments(context, network_id):
             if other_segment['physical_network'] is None:
                 continue
-            other_physdoms = ACI_CONFIG.get_physdoms_by_physnet(other_segment['physical_network'])
+            other_physdoms = ACI_CONFIG.get_physdoms_by_physnet(other_segment['physical_network'], network_id,
+                                                                project_id)
             if not other_physdoms:
                 LOG.warning("No config found for segment %s physical network %s in network %s",
                             local_segment['id'], other_segment['physical_network'], network_id)
