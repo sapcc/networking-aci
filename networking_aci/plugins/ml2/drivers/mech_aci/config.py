@@ -97,6 +97,12 @@ aci_opts = [
                     "written as pc-policy-group:$name (without prefix)"),
     cfg.ListOpt('baremetal_reserved_vlan_ids', default=[],
                 help="List of reserved vlan id ranges in the format of A:B,C:D - e.g 100:107"),
+    cfg.IntOpt('baremetal_encap_blk_start', default=1000),
+    cfg.IntOpt('baremetal_encap_blk_end', default=1999),
+    cfg.ListOpt('baremetal_default_access_vlan_ranges', default=['1800:1999'],
+                help='Default access vlan ranges, must be included in the baremetal encap block. '
+                     'These ranges will be used to allocate VLAN ids for access ports on a '
+                     'per-physdom basis.'),
     cfg.StrOpt('handle_port_update_for_non_baremetal',
                default=False,
                help="Port updates (e.g. binding host removed/changed) are only handled for trunk ports. "
@@ -134,6 +140,7 @@ hostgroup_opts = [
     cfg.StrOpt('baremetal_pc_policy_group',
                help="(baremetal mode) Section which describes the portchannel policy group attributes. "
                     "If not specified wefall back to default_baremetal_pc_policy_group"),
+    cfg.StrOpt('baremetal_access_vlan_ranges', default=None, help='See baremetal_default_access_vlan_ranges'),
 ]
 
 fixed_binding_opts = [
@@ -305,6 +312,10 @@ class ACIConfig:
             if not hostgroup['baremetal_pc_policy_group']:
                 hostgroup['baremetal_pc_policy_group'] = CONF.ml2_aci.default_baremetal_pc_policy_group
 
+            if not hostgroup['baremetal_access_vlan_ranges']:
+                hostgroup['baremetal_access_vlan_ranges'] = CONF.ml2_aci.baremetal_default_access_vlan_ranges
+            hostgroup['baremetal_access_vlan_ranges'] = self.to_range_list(hostgroup['baremetal_access_vlan_ranges'])
+
     def _parse_fixed_bindings(self):
         self._fixed_bindings = self._parse_config("fixed-binding", fixed_binding_opts, to_dict=True)
 
@@ -359,11 +370,8 @@ class ACIConfig:
                     hg[key] = self.hostgroups[far_hg][key]
                 hg['pc_policy_group'] = hg['infra_pc_policy_group']
             elif hg_mode == aci_const.MODE_BAREMETAL:
-                resource_name = "{}-{}".format(CONF.ml2_aci.baremetal_resource_prefix, name)
-                hg['physical_domain'] = [resource_name]
-                hg['physical_network'] = resource_name
-                hg['baremetal_resource_name'] = resource_name
-                hg['pc_policy_group'] = resource_name
+                node_resource_name = "{}-{}".format(CONF.ml2_aci.baremetal_resource_prefix, name)
+                hg['pc_policy_group'] = node_resource_name
 
                 # bindings do have a different policygroup in baremetal mode
                 for n, binding in enumerate(hg['bindings']):
@@ -387,6 +395,28 @@ class ACIConfig:
 
         return hostgroup
 
+    def annotate_baremetal_info(self, hostgroup, network_id, override_project_id=None):
+        if not (hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL):
+            return
+
+        # since baremetal resources are scoped to a project we need to find out if they are in a project
+        ports = self.db.get_ports_on_network_by_physnet_prefix(self.context, network_id, self.baremetal_resource_prefix)
+        project_id = override_project_id
+        for port in ports:
+            if project_id is None:
+                project_id = port['project_id']
+            elif port['project_id'] != project_id:
+                LOG.error("Hostgroup %s has extra port %s in different project (%s vs %s)",
+                          hostgroup['name'], port['port_id'], project_id, port['project_id'])
+
+        if project_id:
+            res_name = self.gen_bm_resource_name(project_id)
+        else:
+            res_name = None
+        hostgroup['baremetal_resource_name'] = res_name
+        hostgroup['physical_domain'] = [res_name]
+        hostgroup['physical_network'] = res_name
+
     def get_hostgroup_name_by_host(self, host_id):
         for hostgroup_name, hostgroup_config in self.hostgroups.items():
             if host_id in hostgroup_config['hosts']:
@@ -398,12 +428,13 @@ class ACIConfig:
             return None, None
         return hostgroup_name, self.get_hostgroup(hostgroup_name, segment_id, level)
 
-    def get_physdoms_by_physnet(self, physnet):
+    def get_physdoms_by_physnet(self, physnet, network_id, override_project_id=None):
         for hg_name, hg in self.hostgroups.items():
             if hg['direct_mode']:
                 # we need mapped values for direct-mode hgs
                 hg = self.get_hostgroup(hg_name)
             if hg['physical_network'] == physnet:
+                self.annotate_baremetal_info(hg, network_id, override_project_id)
                 return hg['physical_domain']
         return []
 
@@ -420,6 +451,13 @@ class ACIConfig:
     def baremetal_reserved_vlans(self):
         ranges = self.to_range_list(CONF.ml2_aci.baremetal_reserved_vlan_ids)
         return common.get_set_from_ranges(ranges)
+
+    @property
+    def baremetal_resource_prefix(self):
+        return "{}-".format(CONF.ml2_aci.baremetal_resource_prefix)
+
+    def gen_bm_resource_name(self, project_id):
+        return "{}{}".format(self.baremetal_resource_prefix, project_id)
 
 
 ACI_CONFIG = ACIConfig()

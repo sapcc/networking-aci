@@ -20,6 +20,7 @@ from oslo_config import cfg
 from oslo_log import log
 
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_client
+from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 
@@ -78,12 +79,12 @@ class CobraManager(object):
         return encap
 
     @classmethod
-    def get_encap_mode(cls, hostgroup, encap):
-        # normal VMs OR baremetal hosts with segment id != 1 --> trunk
-        # baremetal hosts with vlan id 1 or infra hosts --> access
-        vlan_1 = cls.get_static_binding_encap('vlan', 1)
-        if hostgroup.get('direct_mode', False) and \
-                not (hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and encap != vlan_1):
+    def get_encap_mode(cls, hostgroup, segmentation_id):
+        # normal VMs OR baremetal hosts with segment id outside baremetal vlan access range --> trunk
+        # baremetal hosts with vlan id from baremetal vlan access range or infra hosts --> access
+        if hostgroup.get('direct_mode', False) and (
+                hostgroup['hostgroup_mode'] == aci_const.MODE_INFRA or
+                segmentation_id in common.get_set_from_ranges(hostgroup['baremetal_access_vlan_ranges'])):
             return "untagged"  # access
         else:
             return "regular"  # trunk
@@ -181,8 +182,9 @@ class CobraManager(object):
         direct_mode = host_config.get('direct_mode', False)
         bindings = host_config['bindings']
         segment_type = host_config['segment_type']
-        encap = self.get_static_binding_encap(segment_type, encap)
-        encap_mode = self.get_encap_mode(host_config, encap)
+        segmentation_id = encap
+        encap = self.get_static_binding_encap(segment_type, segmentation_id)
+        encap_mode = self.get_encap_mode(host_config, segmentation_id)
         app = fv.Ap(tenant, self.apic_application_profile)
         epg = fv.AEPg(app, network_id)
         entities = []
@@ -204,16 +206,18 @@ class CobraManager(object):
         for physdom in host_config['physical_domain']:
             self._ensure_physdom(epg, physdom, (delete and physdom in physdoms_to_clear))
 
-    def ensure_baremetal_entities(self, resource_name, pc_policy_group_name):
+    def ensure_baremetal_entities(self, policy_group, project_domain, pc_policy_group_name):
         pc_policy_group_data = ACI_CONFIG.get_pc_policy_group_data(pc_policy_group_name)
         if not pc_policy_group_data:
             return False
 
         # aep, physdom, vlan pool
-        aep = infra.AttEntityP('uni/infra', name=resource_name)
-        physdom = phys.DomP('uni', resource_name)
-        vlan_pool = fvns.VlanInstP('uni/infra', name=resource_name, allocMode="static")
-        encap_blk = fvns.EncapBlk(vlan_pool, 'vlan-1', 'vlan-4095')
+        aep = infra.AttEntityP('uni/infra', name=project_domain)
+        physdom = phys.DomP('uni', project_domain)
+        vlan_pool = fvns.VlanInstP('uni/infra', name=project_domain, allocMode="static")
+        encap_blk = fvns.EncapBlk(vlan_pool,
+                                  'vlan-{}'.format(CONF.ml2_aci.baremetal_encap_blk_start),
+                                  'vlan-{}'.format(CONF.ml2_aci.baremetal_encap_blk_end))
 
         dom_vlan_pool_rel = infra.RsVlanNs(physdom, tDn=vlan_pool.dn)
         aep_dom_rel = infra.RsDomP(aep, physdom.dn)
@@ -221,7 +225,7 @@ class CobraManager(object):
         aep_entities = [aep, physdom, vlan_pool, encap_blk, dom_vlan_pool_rel, aep_dom_rel]
 
         # pc profile
-        pc_profile = infra.AccBndlGrp('uni/infra/funcprof', name=resource_name, lagT=pc_policy_group_data['lag_mode'])
+        pc_profile = infra.AccBndlGrp('uni/infra/funcprof', name=policy_group, lagT=pc_policy_group_data['lag_mode'])
         pc_entities = [pc_profile]
         pc_attrs = [
             ('link_level_policy', infra.RsHIfPol, 'tnFabricHIfPolName'),
@@ -242,11 +246,8 @@ class CobraManager(object):
 
         return True
 
-    def clean_baremetal_objects(self, host_config):
-        if not host_config.get('direct_mode', False) or not host_config['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
-            return
-
-        resource_name = host_config['baremetal_resource_name']
+    def clean_baremetal_objects(self, resource_name):
+        LOG.info("Clearing baremetal entities for %s", resource_name)
         aep = infra.AttEntityP('uni/infra', name=resource_name)
         aep.delete()
         physdom = phys.DomP('uni', resource_name)
@@ -260,7 +261,8 @@ class CobraManager(object):
 
     def ensure_hostgroup_mode_config(self, host_config, source=""):
         if host_config['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
-            if not self.ensure_baremetal_entities(host_config['baremetal_resource_name'],
+            if not self.ensure_baremetal_entities(host_config['pc_policy_group'],
+                                                  host_config['baremetal_resource_name'],
                                                   host_config['baremetal_pc_policy_group']):
                 LOG.error("Could not create baremetal entities for hostgroup %s %s",
                           host_config['name'], source)

@@ -36,8 +36,10 @@ class ACIRpcAPI(object):
         self.bind_port_postcommit(port, host_config, segment, next_segment)
 
     @log_helpers.log_method_call
-    def delete_port(self, rpc_context, port, host_config, clearable_phys_doms):
-        self.delete_port_postcommit(port, host_config, clearable_phys_doms)
+    def delete_port(self, rpc_context, port, host_config, clearable_phys_doms, clearable_bm_entities,
+                    reset_bindings_to_infra):
+        self.delete_port_postcommit(port, host_config, clearable_phys_doms, clearable_bm_entities,
+                                    reset_bindings_to_infra)
 
     def create_network(self, rpc_context, network, external=False):
         self.create_network_postcommit(network, external)
@@ -51,8 +53,8 @@ class ACIRpcAPI(object):
     def delete_subnet(self, rpc_context, subnet, external, address_scope_name, last_on_network):
         self.delete_subnet_postcommit(subnet, external, address_scope_name, last_on_network)
 
-    def clean_baremetal_objects(self, rpc_context, host_config):
-        self.clean_baremetal_objects_agent(host_config)
+    def clean_baremetal_objects(self, rpc_context, resource_name):
+        self.clean_baremetal_objects_agent(resource_name)
 
     def sync_direct_mode_config(self, rpc_context, host_config):
         self.sync_direct_mode_config_agent(host_config)
@@ -157,6 +159,9 @@ class AgentRpcCallback(object):
                           hostgroup_name, host, network_id)
                 continue
 
+            # for mode baremetal: override baremetal_resource_name
+            ACI_CONFIG.annotate_baremetal_info(hostgroup, network_id)
+
             segment = segment_dict[segment_id]
             result['bindings'].append({
                 'binding:host_id': host,
@@ -201,9 +206,10 @@ class ACIRpcClientAPI(object):
         self._fanout().cast(self.rpc_context, 'bind_port', port=port, host_config=host_config, segment=segment,
                             next_segment=next_segment)
 
-    def delete_port(self, port, host_config, clearable_phys_doms):
+    def delete_port(self, port, host_config, clearable_phys_doms, clearable_bm_entities, reset_bindings_to_infra):
         self._fanout().cast(self.rpc_context, 'delete_port', port=port, host_config=host_config,
-                            clearable_phys_doms=clearable_phys_doms)
+                            clearable_phys_doms=clearable_phys_doms, clearable_bm_entities=clearable_bm_entities,
+                            reset_bindings_to_infra=reset_bindings_to_infra)
 
     def create_network(self, network, external):
         self._fanout().cast(self.rpc_context, 'create_network', network=network, external=external)
@@ -219,8 +225,8 @@ class ACIRpcClientAPI(object):
         self._fanout().cast(self.rpc_context, 'delete_subnet', subnet=subnet, external=external,
                             address_scope_name=address_scope_name, last_on_network=last_on_network)
 
-    def clean_baremetal_objects(self, host_config):
-        self._fanout().cast(self.rpc_context, 'clean_baremetal_objects', host_config=host_config)
+    def clean_baremetal_objects(self, resource_name):
+        self._fanout().cast(self.rpc_context, 'clean_baremetal_objects', resource_name=resource_name)
 
     def sync_direct_mode_config(self, host_config):
         self._fanout().cast(self.rpc_context, 'sync_direct_mode_config', host_config=host_config)
