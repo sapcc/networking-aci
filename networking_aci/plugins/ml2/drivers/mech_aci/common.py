@@ -171,9 +171,12 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 hosts.add(host)
         return hosts
 
-    def get_segment_ids_by_physnet(self, context, physical_network):
+    def get_segment_ids_by_physnet(self, context, physical_network, fuzzy_match=False):
         query = context.session.query(segment_models.NetworkSegment.id)
-        query = query.filter(segment_models.NetworkSegment.physical_network == physical_network)
+        if fuzzy_match:
+            query = query.filter(segment_models.NetworkSegment.physical_network.like(physical_network))
+        else:
+            query = query.filter(segment_models.NetworkSegment.physical_network == physical_network)
         return [seg.id for seg in query.all()]
 
     def get_ports_on_network_by_physnet_prefix(self, context, network_id, physical_network_prefix):
