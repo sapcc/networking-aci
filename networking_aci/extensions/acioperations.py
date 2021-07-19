@@ -174,7 +174,16 @@ class HostgroupModeController(wsgi.Controller):
         if not hg_config:
             raise web_exc.HTTPBadRequest("Hostgroup {} has no config associated with it".format(hostgroup_name))
 
-        for segment_id in self.db.get_segment_ids_by_physnet(ctx, hg_config['physical_network']):
+        if curr_mode == aci_const.MODE_BAREMETAL:
+            # for baremetal switchover we need to check all baremetal segments for active portbindings
+            physnet_to_check = "{}%".format(ACI_CONFIG.baremetal_resource_prefix)
+            fuzzy = True
+        else:
+            # for infra switchover active portbindings can only be on one physnet
+            physnet_to_check = hg_config['physical_network']
+            fuzzy = False
+
+        for segment_id in self.db.get_segment_ids_by_physnet(ctx, physnet_to_check, fuzzy_match=fuzzy):
             hosts = self.db.get_hosts_on_segment(ctx, segment_id)
             for host in hg_config['hosts']:
                 if host in hosts:
