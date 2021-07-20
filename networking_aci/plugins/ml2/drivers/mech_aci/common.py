@@ -182,8 +182,8 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
     def get_ports_on_network_by_physnet_prefix(self, context, network_id, physical_network_prefix):
         # get all ports for a network that are on a segment with a physnet prefix
         fields = [
-            segment_models.NetworkSegment.id, segment_models.NetworkSegment.physical_network,
-            models_v2.Port.id, models_v2.Port.project_id
+            models_v2.Port.id, models_v2.Port.project_id,
+            segment_models.NetworkSegment.id, segment_models.NetworkSegment.physical_network
         ]
         query = context.session.query(*fields)
         query = query.filter(models_v2.Port.network_id == network_id)
@@ -195,10 +195,10 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         result = []
         for entry in query.all():
             result.append({
-                'segment_id': entry[0],
-                'physical_network': entry[1],
-                'port_id': entry[2],
-                'project_id': entry[3],
+                'port_id': entry[0],
+                'project_id': entry[1],
+                'segment_id': entry[2],
+                'physical_network': entry[3],
             })
 
         return result
