@@ -216,7 +216,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def get_trunk_vlan_usage_on_project(self, context, project_id, segmentation_id=None):
         # return vlan --> networks mapping for aci trunk ports inside a project
-        query = context.session.query(trunk_models.SubPort.segmentation_id, models_v2.Port.network_id)
+        query = context.session.query(models_v2.Port.network_id, trunk_models.SubPort.segmentation_id)
         query = query.filter(models_v2.Port.project_id == project_id)
         query = query.join(trunk_models.SubPort, trunk_models.SubPort.port_id == models_v2.Port.id)
         query = query.join(ml2_models.PortBinding, ml2_models.PortBinding.port_id == models_v2.Port.id)
