@@ -363,7 +363,7 @@ class CobraManager(object):
             epg_contracts.append(contract)
 
         for provided in scope_config['provided_contracts']:
-            contract = fv.RsCons(epg, provided)
+            contract = fv.RsProv(epg, provided)
             if delete and last_on_network:
                 contract.delete()
             epg_contracts.append(contract)
