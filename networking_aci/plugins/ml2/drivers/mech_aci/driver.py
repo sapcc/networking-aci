@@ -306,7 +306,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         # if no ports on this segment for host we can remove the aci allocation.
         # In baremetal mode we need to call cleanup when the hostgroup is no longer on the physnet
         released = self.allocations_manager.release_segment(network, hostgroup, 1, segment)
-        if not released and not (hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL):
+        if not (released or hostgroup['direct_mode']):
             return
 
         # Call to ACI to delete port if the segment is released i.e.
@@ -321,12 +321,24 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         clearable_bm_entities = []
         reset_bindings_to_infra = False
-        if hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
+        if hostgroup['direct_mode']:
             # if this hostgroup has hosts left we cancel the removal
             hosts_on_network = self.db.get_hosts_on_network(context, network['id'], level=1)
             if any(host in hosts_on_network for host in hostgroup['hosts']):
                 return
 
+            # if this is a infra-mode binding make sure no VM port is bound before removing it
+            # (this should never be the case)
+            if hostgroup['hostgroup_mode'] == aci_const.MODE_INFRA:
+                parent_hostgroup = ACI_CONFIG.get_hostgroup(hostgroup['parent_hostgroup'])
+                if any(host in hosts_on_network for host in parent_hostgroup['hosts']):
+                    LOG.error("Found parent group binding %s for hostgroup %s while removing "
+                              "port %s from network %s - we should not bind parent-hosts and subgroups "
+                              "in the same network",
+                              parent_hostgroup['name'], hostgroup['name'], port['id'], network['id'])
+                    return
+
+        if hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
             # if this hostgroup has no host left on the physnet we can reset the VPC/bindings
             hosts_on_physnet = self.db.get_hosts_on_physnet(context, hostgroup['physical_network'], level=1)
             if not any(host in hosts_on_physnet for host in hostgroup['hosts']):
