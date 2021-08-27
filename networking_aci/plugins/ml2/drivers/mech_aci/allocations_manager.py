@@ -346,6 +346,7 @@ class AllocationsManager(object):
     def _segmentation_ids(host_config):
         return common.get_set_from_ranges(host_config['segment_range'])
 
+    @db_api.retry_db_errors
     def _sync_allocations(self):
         LOG.info("Preparing ACI Allocations table")
         level = 1  # Currently only supporting one level in hierarchy
