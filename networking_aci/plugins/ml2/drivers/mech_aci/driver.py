@@ -11,6 +11,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+from neutron import service
 from neutron_lib import context
 from neutron_lib import constants as n_const
 from neutron_lib import exceptions as n_exc
@@ -42,7 +43,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         ACI_CONFIG.db = self.db
         self.context = context.get_admin_context_without_session()
         self.rpc_notifier = rpc_api.ACIRpcClientAPI(self.context)
-        self.start_rpc_listeners()
         self.trunk_driver = ACITrunkDriver.create()
 
     def initialize(self):
@@ -63,6 +63,9 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
 
         return self.conn.consume_in_threads()
+
+    def get_workers(self):
+        return [service.RpcWorker([self], worker_process_count=0)]
 
     def bind_port(self, context):
         port = context.current
