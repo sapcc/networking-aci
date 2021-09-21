@@ -15,6 +15,7 @@ from neutron_lib import context
 from neutron_lib import constants as n_const
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins.ml2 import api
+from neutron_lib.api.definitions import portbindings
 from neutron_lib import rpc as n_rpc
 from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
@@ -44,6 +45,9 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.rpc_notifier = rpc_api.ACIRpcClientAPI(self.context)
         self.start_rpc_listeners()
         self.trunk_driver = ACITrunkDriver.create()
+        self.vif_details = {
+            portbindings.VIF_DETAILS_CONNECTIVITY: portbindings.CONNECTIVITY_L2
+        }
 
     def initialize(self):
         pass
