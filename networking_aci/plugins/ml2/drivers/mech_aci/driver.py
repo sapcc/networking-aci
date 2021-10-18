@@ -12,6 +12,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 from neutron import service
+from neutron_lib.api.definitions import availability_zone as az_def
+from neutron_lib.api.definitions import external_net as extnet_def
 from neutron_lib import context
 from neutron_lib import constants as n_const
 from neutron_lib import exceptions as n_exc
@@ -25,6 +27,7 @@ from networking_aci.extensions.acioperations import Acioperations  # noqa, impor
 from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
 from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
+from networking_aci.plugins.ml2.drivers.mech_aci import exceptions as aci_exc
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG, CONF
 from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
 from networking_aci.plugins.ml2.drivers.mech_aci.trunk import ACITrunkDriver
@@ -206,6 +209,11 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                   ", ".join(seg[api.PHYSICAL_NETWORK] for seg in context.segments_to_bind))
 
     # Network callbacks
+    def create_network_precommit(self, context):
+        az_hints = context.current.get(az_def.AZ_HINTS)
+        if len(az_hints) > 1:
+            raise aci_exc.OnlyOneAZHintAllowed()
+
     def create_network_postcommit(self, context):
         external = self._network_external(context)
         self.rpc_notifier.create_network(context.current, external=external)
@@ -254,6 +262,43 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                                         last_on_network=last_on_network)
 
     # Port callbacks
+    def create_port_precommit(self, context):
+        self._check_port_az_affinity(context.network.current, context.current)
+
+    def update_port_precommit(self, context):
+        # only check AZ again if binding host changed
+        orig_host = common.get_host_from_profile(context.original['binding:profile'],
+                                                 context.original['binding:host_id'])
+        curr_host = common.get_host_from_profile(context.current['binding:profile'],
+                                                 context.current['binding:host_id'])
+        if orig_host != curr_host:
+            curr_hostgroup_name, curr_hostgroup = ACI_CONFIG.get_hostgroup_by_host(curr_host)
+            if curr_hostgroup_name is not None:
+                self._check_port_az_affinity(context.network.current, context.current)
+
+    def _check_port_az_affinity(self, network, port):
+        host = common.get_host_from_profile(port['binding:profile'], port['binding:host_id'])
+        hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(host)
+        if not hostgroup:
+            return  # ignore unknown binding_hosts
+
+        # no checks are done for external networks, as these can be stretched across AZs
+        if network[extnet_def.EXTERNAL]:
+            return
+
+        az_hints = network.get(az_def.AZ_HINTS)
+        if az_hints:
+            az_hint = az_hints[0]
+            hg_az = [hostgroup['host_azs'].get(host, hostgroup['availability_zones'])]
+            if len(hg_az) > 1 or az_hint != hg_az[0]:
+                exc = aci_exc.HostgroupNetworkAZAffinityError(port_id=port['id'], hostgroup_name=hostgroup_name,
+                                                              host=host, hostgroup_az=hg_az,
+                                                              network_az=az_hint)
+                if CONF.ml2_aci.az_checks_enabled:
+                    raise exc
+                else:
+                    LOG.warning("Binding port with non-matching AZ: %s", exc)
+
     def update_port_postcommit(self, context):
         orig_host = common.get_host_from_profile(context.original['binding:profile'],
                                                  context.original['binding:host_id'])
