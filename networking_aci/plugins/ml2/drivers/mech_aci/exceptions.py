@@ -65,3 +65,12 @@ class HostAlreadyHasAccessBinding(exceptions.NeutronException):
 class AccessSegmentationIdAllocationPoolExhausted(exceptions.NeutronException):
     message = ("Cannot allocate segmentation id for %(hostgroup_name)s - "
                "the access segmentation id pool for physical network %(physical_network)s is exhausted")
+
+
+class OnlyOneAZHintAllowed(exceptions.BadRequest):
+    message = "Only one availability zone hint allowed per object"
+
+
+class HostgroupNetworkAZAffinityError(exceptions.BadRequest):
+    message = ("Hostgroup %(hostgroup_name)s with %(host)s resides in AZ %(hostgroup_az)s, network requires "
+               "AZ %(network_az)s; AZ mismatch for port %(port_id)s")

@@ -108,6 +108,10 @@ aci_opts = [
                default=False,
                help="Port updates (e.g. binding host removed/changed) are only handled for trunk ports. "
                     "This can be enabled for all ports, but this might have unforseen sideeffects (untested)."),
+    cfg.StrOpt('az_checks_enabled',
+               default=True,
+               help="Enable AZ checks for port creation (default on). If AZ checks are disabled and the check fails "
+                    "port binding will not be blocked and a warning will be logged instead."),
 ]
 
 hostgroup_opts = [
@@ -123,6 +127,12 @@ hostgroup_opts = [
                help="Segment type, currently only vlan is supported"),
     cfg.ListOpt('segment_range', default=[],
                 help="Vlan/segment range to use, specified as from:to. Can have multiple entries separated by ','"),
+    cfg.ListOpt('availability_zones', default=[],
+                help='AZ this hostgroup is in. If a network has an AZ hint set then a port of this network can only '
+                     'be bound if the AZ from the hint is present in this list'),
+    cfg.DictOpt('host_azs', default={},
+                help="Specify an AZ for a bindinghost in the format of 'host:AZ,host:AZ,...'. "
+                     "This overrules the hostgroup's AZ"),
     cfg.BoolOpt('finalize_binding', default=False,
                 help="Finalize portbinding. The port will be bound directly to ACI, but without being in direct mode. "
                      "This can be used for dummy portbindings or where no other driver should be involved. The driver "
