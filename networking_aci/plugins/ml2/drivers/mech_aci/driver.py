@@ -90,8 +90,9 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         # hierarchical or direct?
         if not context.binding_levels:
             self._bind_port_hierarchical(context, port, hostgroup_name, hostgroup)
-        elif hostgroup['direct_mode'] and \
-                hostgroup['hostgroup_mode'] in (aci_const.MODE_BAREMETAL, aci_const.MODE_INFRA):
+        elif hostgroup['finalize_binding'] or \
+                (hostgroup['direct_mode'] and
+                 hostgroup['hostgroup_mode'] in (aci_const.MODE_BAREMETAL, aci_const.MODE_INFRA)):
             # direct binding for a) baremetal on aci and b) infra mode (2nd level)
             self._bind_port_direct(context, port, hostgroup_name, hostgroup)
 
@@ -179,18 +180,21 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                 next_segment = {
                     'segmentation_id': segment['segmentation_id'],
                 }
+                if not hostgroup['finalize_binding']:
+                    # annotate baremetal resource name for baremetal group (if necessary)
+                    network = context.network.current
+                    ACI_CONFIG.annotate_baremetal_info(hostgroup, network['id'], override_project_id=port['project_id'])
 
-                # annotate baremetal resource name for baremetal group (if necessary)
-                network = context.network.current
-                ACI_CONFIG.annotate_baremetal_info(hostgroup, network['id'], override_project_id=port['project_id'])
+                    if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and \
+                            aci_const.TRUNK_PROFILE in port['binding:profile']:
+                        port_type_str = "trunk port"
+                    else:
+                        port_type_str = "access port"
 
-                if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and \
-                        aci_const.TRUNK_PROFILE in port['binding:profile']:
-                    port_type_str = "trunk port"
+                    self.rpc_notifier.bind_port(port, hostgroup, segment, next_segment)
                 else:
-                    port_type_str = "access port"
-
-                self.rpc_notifier.bind_port(port, hostgroup, segment, next_segment)
+                    port_type_str = "finalized portbinding w/o direct-mode set"
+                    vif_details['aci_finalized_binding'] = True
                 context.set_binding(segment['id'], aci_const.VIF_TYPE_ACI, vif_details, n_const.ACTIVE)
                 LOG.info("Directly bound port %s to hostgroup %s with segment %s vlan %s (%s)",
                          port['id'], hostgroup_name, segment['id'], segment['segmentation_id'], port_type_str)
