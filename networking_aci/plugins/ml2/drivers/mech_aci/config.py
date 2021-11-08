@@ -123,6 +123,10 @@ hostgroup_opts = [
                help="Segment type, currently only vlan is supported"),
     cfg.ListOpt('segment_range', default=[],
                 help="Vlan/segment range to use, specified as from:to. Can have multiple entries separated by ','"),
+    cfg.BoolOpt('finalize_binding', default=False,
+                help="Finalize portbinding. The port will be bound directly to ACI, but without being in direct mode. "
+                     "This can be used for dummy portbindings or where no other driver should be involved. The driver "
+                     "will still do a two level portbinding, where both levels are this driver."),
 
     # non-hierarchical portbinding / baremetal options
     cfg.BoolOpt('direct_mode', default=False,
