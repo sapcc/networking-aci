@@ -23,6 +23,7 @@ from neutron.db import segments_db as ml2_db
 from neutron.plugins.ml2 import models as ml2_models
 import neutron.services.trunk.models as trunk_models
 from oslo_log import log as logging
+import sqlalchemy as sa
 
 from networking_aci.db.models import HostgroupModeModel
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
@@ -121,7 +122,8 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             fields.append(ml2_models.PortBindingLevel.segment_id)
         query = context.session.query(*fields)
         query = query.join(ml2_models.PortBindingLevel,
-                           ml2_models.PortBinding.port_id == ml2_models.PortBindingLevel.port_id)
+                           sa.and_(ml2_models.PortBinding.port_id == ml2_models.PortBindingLevel.port_id,
+                                   ml2_models.PortBinding.host == ml2_models.PortBindingLevel.host))
         query = query.join(segment_models.NetworkSegment,
                            ml2_models.PortBindingLevel.segment_id == segment_models.NetworkSegment.id)
         query = query.filter(segment_models.NetworkSegment.network_id == network_id)
