@@ -289,7 +289,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         az_hints = network.get(az_def.AZ_HINTS)
         if az_hints:
             az_hint = az_hints[0]
-            hg_az = [hostgroup['host_azs'].get(host, hostgroup['availability_zones'])]
+            hg_az = [hostgroup['host_azs'][host]] if host in hostgroup['host_azs'] else hostgroup['availability_zones']
             if len(hg_az) > 1 or az_hint != hg_az[0]:
                 exc = aci_exc.HostgroupNetworkAZAffinityError(port_id=port['id'], hostgroup_name=hostgroup_name,
                                                               host=host, hostgroup_az=hg_az,
