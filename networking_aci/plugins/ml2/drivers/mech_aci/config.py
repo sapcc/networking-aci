@@ -108,10 +108,10 @@ aci_opts = [
                default=False,
                help="Port updates (e.g. binding host removed/changed) are only handled for trunk ports. "
                     "This can be enabled for all ports, but this might have unforseen sideeffects (untested)."),
-    cfg.StrOpt('az_checks_enabled',
-               default=True,
-               help="Enable AZ checks for port creation (default on). If AZ checks are disabled and the check fails "
-                    "port binding will not be blocked and a warning will be logged instead."),
+    cfg.BoolOpt('az_checks_enabled',
+                default=True,
+                help="Enable AZ checks for port creation (default on). If AZ checks are disabled and the check fails "
+                     "port binding will not be blocked and a warning will be logged instead."),
 ]
 
 hostgroup_opts = [
