@@ -74,3 +74,8 @@ class OnlyOneAZHintAllowed(exceptions.BadRequest):
 class HostgroupNetworkAZAffinityError(exceptions.BadRequest):
     message = ("Hostgroup %(hostgroup_name)s with %(host)s resides in AZ %(hostgroup_az)s, network requires "
                "AZ %(network_az)s; AZ mismatch for port %(port_id)s")
+
+
+class TransitBindingProhibited(exceptions.BadRequest):
+    """Raised when a user tries to bind a transit"""
+    message = ("Binding transit hostgroups is prohibited (port %(port_id)s host %(host)s")

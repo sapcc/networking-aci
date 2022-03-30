@@ -115,7 +115,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             hosts.add(host)
         return hosts
 
-    def get_hosts_on_network(self, context, network_id, level=None, with_segment=False):
+    def get_hosts_on_network(self, context, network_id, level=None, with_segment=False, transit_hostgroups=None):
         """Get all binding hosts (from host or binding_profile) present on a network"""
         fields = [ml2_models.PortBinding.host, ml2_models.PortBinding.profile]
         if with_segment:
@@ -137,6 +137,24 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 hosts.add((host, entry.segment_id))
             else:
                 hosts.add(host)
+
+        # find all segments in this network that belong to a transit (unbound segments)
+        if transit_hostgroups:
+            transit_physnets = [hg['physical_network'] for hg in transit_hostgroups]
+            query = context.session.query(segment_models.NetworkSegment.id,
+                                          segment_models.NetworkSegment.physical_network)
+            query = query.filter_by(network_type='vlan', network_id=network_id)
+            query = query.filter(segment_models.NetworkSegment.physical_network.in_(transit_physnets))
+            for entry in query.all():
+                # find host(group) of physnet
+                for hg in transit_hostgroups:
+                    if entry.physical_network == hg['physical_network']:
+                        break
+                if with_segment:
+                    hosts.add((hg['hosts'][0], entry.id))
+                else:
+                    hosts.add(hg['hosts'][0])
+
         return hosts
 
     def get_hosts_on_physnet(self, context, physical_network, level=None, with_segment=False, with_segmentation=False):

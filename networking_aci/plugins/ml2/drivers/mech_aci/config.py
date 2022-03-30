@@ -137,6 +137,9 @@ hostgroup_opts = [
                 help="Finalize portbinding. The port will be bound directly to ACI, but without being in direct mode. "
                      "This can be used for dummy portbindings or where no other driver should be involved. The driver "
                      "will still do a two level portbinding, where both levels are this driver."),
+    cfg.BoolOpt('fabric_transit', default=False,
+                help="Hostgroup is a transit to the cc-fabric and will automatically be bound when a segment is found. "
+                     "Cannot be bound by a port."),
 
     # non-hierarchical portbinding / baremetal options
     cfg.BoolOpt('direct_mode', default=False,
@@ -472,6 +475,13 @@ class ACIConfig:
 
     def gen_bm_resource_name(self, project_id):
         return "{}{}".format(self.baremetal_resource_prefix, project_id)
+
+    def get_transit_hostgroups(self):
+        hgs = []
+        for hg in self.hostgroups.values():
+            if hg['fabric_transit']:
+                hgs.append(hg)
+        return hgs
 
 
 ACI_CONFIG = ACIConfig()

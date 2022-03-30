@@ -22,3 +22,5 @@ MODE_BAREMETAL = 'baremetal'
 MODE_INFRA = 'infra'
 
 TRUNK_PROFILE = 'aci_trunk'
+
+CC_FABRIC_TRANSIT = 'cc-fabric-transit'  # needs to be aligned with networking-ccloud
