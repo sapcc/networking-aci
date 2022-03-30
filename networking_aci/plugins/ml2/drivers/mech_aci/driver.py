@@ -14,9 +14,12 @@
 from neutron import service
 from neutron_lib.api.definitions import availability_zone as az_def
 from neutron_lib.api.definitions import external_net as extnet_def
+from neutron_lib.callbacks import events
+from neutron_lib.callbacks import registry
 from neutron_lib import context
 from neutron_lib import constants as n_const
 from neutron_lib import exceptions as n_exc
+from neutron_lib.plugins import directory
 from neutron_lib.plugins.ml2 import api
 from neutron_lib.api.definitions import portbindings
 from neutron_lib import rpc as n_rpc
@@ -36,12 +39,15 @@ from networking_aci.plugins.ml2.drivers.mech_aci.trunk import ACITrunkDriver
 LOG = logging.getLogger(__name__)
 
 
+@registry.has_registry_receivers
 class CiscoACIMechanismDriver(api.MechanismDriver):
     def __init__(self):
         LOG.info(_LI("ACI mechanism driver initializing..."))
         self.topic = None
         self.conn = None
+        self._plugin_property = None
         self.db = common.DBPlugin()
+        self.rpc_api = rpc_api.AgentRpcCallback(self.db)
         self.allocations_manager = allocations.AllocationsManager(self.db)
 
         ACI_CONFIG.db = self.db
@@ -55,10 +61,16 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
     def initialize(self):
         pass
 
+    @property
+    def _plugin(self):
+        if self._plugin_property is None:
+            self._plugin_property = directory.get_plugin()
+        return self._plugin_property
+
     def _setup_rpc(self):
         """Initialize components to support agent communication."""
         self.endpoints = [
-            rpc_api.AgentRpcCallback(self.db),
+            self.rpc_api,
         ]
 
     @log_helpers.log_method_call
@@ -84,6 +96,9 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         if not hostgroup:
             LOG.warning("No aci config found for binding host %s while binding port %s", host, port['id'])
             return
+
+        if hostgroup['fabric_transit']:
+            raise aci_exc.TransitBindingProhibited(port_id=port['id'], host=host)
 
         if len(context.segments_to_bind) < 1:
             LOG.warning("No segments found for port %s with host %s - very unusual", port['id'], host)
@@ -264,6 +279,26 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         last_on_network = len(subnets) == 0
         self.rpc_notifier.delete_subnet(context.current, external=external, address_scope_name=address_scope_name,
                                         last_on_network=last_on_network)
+
+    @registry.receives(aci_const.CC_FABRIC_TRANSIT, [events.AFTER_CREATE])
+    def on_fabric_transit_created(self, resource, event, trigger, payload):
+        network_id = payload.metadata['network_id']
+        host = payload.metadata['host']
+        LOG.info("Got transit creation notification for transit host %s network %s, syncing network",
+                 host, network_id)
+
+        # get network sync data
+        try:
+            network = self._plugin.get_network(payload.context, network_id)
+        except n_exc.NetworkNotFound as e:
+            LOG.error("Could not sync transit %s network %s - network does not exist! (Error was %s)",
+                      host, network_id, e)
+            return
+
+        sync_data = self.rpc_api._get_network(network)
+
+        # send to agent
+        self.rpc_notifier.sync_network(sync_data)
 
     # Port callbacks
     def create_port_precommit(self, context):
