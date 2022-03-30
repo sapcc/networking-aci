@@ -59,6 +59,9 @@ class ACIRpcAPI(object):
     def sync_direct_mode_config(self, rpc_context, host_config):
         self.sync_direct_mode_config_agent(host_config)
 
+    def sync_network(self, rpc_context, network):
+        self.sync_network_agent(network)
+
 
 class AgentRpcCallback(object):
 
@@ -230,6 +233,9 @@ class ACIRpcClientAPI(object):
 
     def sync_direct_mode_config(self, host_config):
         self._fanout().cast(self.rpc_context, 'sync_direct_mode_config', host_config=host_config)
+
+    def sync_network(self, network):
+        self._fanout().cast(self.rpc_context, 'sync_network', network=network)
 
 
 class AgentRpcClientAPI(object):
