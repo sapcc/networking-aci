@@ -126,6 +126,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
     def sync_direct_mode_config_agent(self, host_config):
         self.aci_manager.ensure_hostgroup_mode_config(host_config, source="via rpc api")
 
+    @log_helpers.log_method_call
+    def sync_network_agent(self, network):
+        return self.aci_manager.sync_network(network)
+
     # End RPC callbacks
 
     # Start Agent mechanics
