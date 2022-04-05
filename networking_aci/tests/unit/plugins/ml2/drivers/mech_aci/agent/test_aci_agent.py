@@ -34,6 +34,7 @@ class AciNeutronAgentTest(base.BaseTestCase):
         sys.modules['cobra.mit.request'] = mock.MagicMock()
         sys.modules['cobra.model'] = mock.MagicMock()
         sys.modules['cobra.model.fv'] = mock.MagicMock()
+        sys.modules['cobra.modelimpl.l3ext.out'] = mock.MagicMock()
         from networking_aci.plugins.ml2.drivers.mech_aci.agent.aci_agent import AciNeutronAgent
 
         self.aci_agent = AciNeutronAgent()

@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 from cobra.model import fv, fvns, infra, phys
-from cobra import modelimpl
+import cobra.modelimpl.l3ext.out
 import netaddr
 from neutron_lib import context
 from oslo_config import cfg
@@ -562,7 +562,7 @@ class CobraManager(object):
 
         l3_out = self.apic.lookupByDn("uni/tn-{}/out-{}".format(tenant_name, out_name))
 
-        if isinstance(l3_out, modelimpl.l3ext.out.Out):
+        if isinstance(l3_out, cobra.modelimpl.l3ext.out.Out):
             return l3_out
 
         return None
