@@ -14,7 +14,7 @@
 #    under the License.
 
 from neutron_lib.db import model_base
-from neutron.db import standard_attr
+from neutron_lib.db import standard_attr
 import sqlalchemy as sa
 
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
