@@ -200,7 +200,12 @@ class CobraManager(object):
                 port.delete()
             entities.append(port)
 
-        self.apic.commit(entities)
+        if entities:
+            self.apic.commit(entities)
+        else:
+            binding_hosts = ", ".join(host_config['hosts']) if host_config else "<no hosts>"
+            LOG.debug("Sync of network %s for binding hosts '%s' did not have any bindings, skipping this hostgroup",
+                      network_id, binding_hosts)
 
         # Associate to Physical Domain
         for physdom in host_config['physical_domain']:
