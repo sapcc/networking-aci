@@ -331,7 +331,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             hg_az = [hostgroup['host_azs'][host]] if host in hostgroup['host_azs'] else hostgroup['availability_zones']
             if len(hg_az) > 1 or az_hint != hg_az[0]:
                 exc = aci_exc.HostgroupNetworkAZAffinityError(port_id=port['id'], hostgroup_name=hostgroup_name,
-                                                              host=host, hostgroup_az=hg_az,
+                                                              host=host, hostgroup_az=", ".join(hg_az),
                                                               network_az=az_hint)
                 if CONF.ml2_aci.az_checks_enabled:
                     raise exc
