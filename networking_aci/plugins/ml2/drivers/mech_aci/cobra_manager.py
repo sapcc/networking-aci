@@ -438,8 +438,9 @@ class CobraManager(object):
         self.clean_bindings(network)
         self.ensure_domain_and_epg(network.get('id'), external=network.get('router:external'))
 
-        for subnet in network.get('subnets'):
-            self.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
+        if CONF.ml2_aci.handle_all_l3_gateways and aci_const.CC_FABRIC_L3_GATEWAY_TAG not in network['tags']:
+            for subnet in network.get('subnets'):
+                self.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
 
         for binding in network.get('bindings'):
             if binding.get('host_config'):
@@ -458,8 +459,9 @@ class CobraManager(object):
         bd = self.get_bd(network_id)
         if bd:
             neutron_subnets = []
-            for neutron_subnet in network.get('subnets', []):
-                neutron_subnets.append(self._get_gateway(neutron_subnet))
+            if CONF.ml2_aci.handle_all_l3_gateways and aci_const.CC_FABRIC_L3_GATEWAY_TAG not in network['tags']:
+                for neutron_subnet in network.get('subnets', []):
+                    neutron_subnets.append(self._get_gateway(neutron_subnet))
 
             for subnet in bd.subnet:
                 if subnet.ip not in neutron_subnets:
