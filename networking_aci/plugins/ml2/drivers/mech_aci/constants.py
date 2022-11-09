@@ -24,3 +24,6 @@ MODE_INFRA = 'infra'
 TRUNK_PROFILE = 'aci_trunk'
 
 CC_FABRIC_TRANSIT = 'cc-fabric-transit'  # needs to be aligned with networking-ccloud
+CC_FABRIC_NET_GW = 'cc-fabric-network-gateway'
+
+CC_FABRIC_L3_GATEWAY_TAG = 'gateway-host::cc-fabric'
