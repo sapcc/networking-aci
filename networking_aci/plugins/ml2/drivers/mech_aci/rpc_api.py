@@ -121,6 +121,7 @@ class AgentRpcCallback(object):
         except tagging.TagResourceNotFound:
             LOG.warning("Cannot find network {} while attempting to check static binding tag".format(network_id))
             tags = []
+        result['tags'] = tags
 
         for tag in tags:
             network_fixed_binding = ACI_CONFIG.get_fixed_binding_by_tag(tag)
