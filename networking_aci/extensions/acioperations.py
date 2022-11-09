@@ -93,6 +93,11 @@ class Acioperations(api_extensions.ExtensionDescriptor):
         hg_mode_endpoint = extensions.ResourceExtension('aci-ml2/hostgroup-modes', res)
         endpoints.append(hg_mode_endpoint)
 
+        # networks endpoint
+        res = Resource(NetworksController(plugin, db, rpc_notifier), faults.FAULT_MAP)
+        networks_endpoint = extensions.ResourceExtension('aci-ml2/networks', res)
+        endpoints.append(networks_endpoint)
+
         return endpoints
 
 
@@ -221,3 +226,32 @@ class HostgroupModeController(wsgi.Controller):
             raise web_exc.HTTPNotFound('Hostgroup "{}" does not exist or is not a direct-mode hostgroup'
                                        .format(hostgroup_name))
         return modes[hostgroup_name]
+
+
+class NetworksController(wsgi.Controller):
+    def __init__(self, plugin, db, rpc_notifier):
+        super().__init__()
+        self.plugin = plugin
+        self.db = db
+        self.rpc_notifier = rpc_notifier
+        self.rpc_api = rpc_api.AgentRpcCallback(self.db)
+
+    @check_cloud_admin
+    def index(self, request, **kwargs):
+        raise web_exc.HTTPBadRequest("Listing networks is not implemented")
+
+    @check_cloud_admin
+    def show(self, request, **kwargs):
+        network_id = kwargs.pop('id')
+        network = self.plugin.get_network(request.context, network_id)
+        # NOTE: This is where we could fetch state from the ACI about this network / EPG
+        return {'id': network['id'], 'name': network['name']}
+
+    @check_cloud_admin
+    def update(self, request, **kwargs):
+        network_id = kwargs.pop('id')
+        network = self.plugin.get_network(request.context, network_id)
+        sync_data = self.rpc_api._get_network(network)
+        self.rpc_notifier.sync_network(sync_data)
+
+        return {'sync_sent': True}
