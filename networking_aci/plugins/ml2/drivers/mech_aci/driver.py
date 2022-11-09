@@ -241,6 +241,10 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.rpc_notifier.delete_network(context.current)
 
     def create_subnet_postcommit(self, context):
+        if not CONF.ml2_aci.handle_all_l3_gateways or \
+                aci_const.CC_FABRIC_L3_GATEWAY_TAG in context.network.current['tags']:
+            return
+
         address_scope_name = None
 
         external = self._subnet_external(context)
@@ -265,6 +269,10 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.rpc_notifier.create_subnet(context.current, external=external, address_scope_name=address_scope_name)
 
     def delete_subnet_postcommit(self, context):
+        if not CONF.ml2_aci.handle_all_l3_gateways or \
+                aci_const.CC_FABRIC_L3_GATEWAY_TAG in context.network.current['tags']:
+            return
+
         network_id = context.current['network_id']
         subnetpool_id = context.current['subnetpool_id']
         if subnetpool_id is None:
@@ -299,6 +307,41 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         # send to agent
         self.rpc_notifier.sync_network(sync_data)
+
+    @registry.receives(aci_const.CC_FABRIC_NET_GW, [events.BEFORE_UPDATE])
+    def on_network_gateway_move(self, resource, event, trigger, payload):
+        network_id = payload.metadata['network_id']
+        if not payload.metadata['move-to-cc-fabric']:
+            LOG.warning("Moving a gateway _away_ from cc-fabric is not supported by ACI yet (for network %s)",
+                        network_id)
+            return
+
+        LOG.info("Got request to move l3 gateway away from ACI for network %s", network_id)
+
+        try:
+            network = self._plugin.get_network(payload.context, network_id)
+        except n_exc.NetworkNotFound as e:
+            LOG.error("Could not find network %s - network does not exist! (Error was %s)",
+                      network_id, e)
+            return
+
+        if not network[extnet_def.EXTERNAL]:
+            LOG.error("Got event to move gateway of network %s, which is NOT an external network!", network_id)
+            return
+
+        subnets_to_delete = []
+        for subnet_id in network['subnets']:
+            subnet = self._plugin.get_subnet(payload.context, subnet_id)
+            subnetpool_id = subnet['subnetpool_id']
+            address_scope_name = self.db.get_address_scope_name(payload.context, subnetpool_id)
+            if address_scope_name is None:
+                continue
+            subnets_to_delete.append((subnet, address_scope_name))
+
+        for n, (subnet, address_scope_name) in enumerate(subnets_to_delete):
+            last_on_network = n + 1 == len(network['subnets'])
+            self.rpc_notifier.delete_subnet(subnet, external=True, address_scope_name=address_scope_name,
+                                            last_on_network=last_on_network)
 
     # Port callbacks
     def create_port_precommit(self, context):

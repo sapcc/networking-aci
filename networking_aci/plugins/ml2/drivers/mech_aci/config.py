@@ -112,6 +112,9 @@ aci_opts = [
                 default=True,
                 help="Enable AZ checks for port creation (default on). If AZ checks are disabled and the check fails "
                      "port binding will not be blocked and a warning will be logged instead."),
+    cfg.BoolOpt('handle_all_l3_gateways', default=True,
+                help='Configure l3 gateways for all external networks, except when tagged with '
+                     'gateway-host::cc-fabric. If turned off, no gateways will be configured.'),
 ]
 
 hostgroup_opts = [
