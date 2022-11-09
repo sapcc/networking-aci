@@ -21,7 +21,6 @@ from neutron import wsgi
 from neutron_lib.api import extensions as api_extensions
 from neutron_lib.api import faults
 from neutron_lib import context
-from neutron_lib.plugins import constants as plugin_constants
 from neutron_lib.plugins import directory
 from oslo_log import log
 from webob import exc as web_exc
@@ -76,7 +75,7 @@ class Acioperations(api_extensions.ExtensionDescriptor):
 
         Resources define new nouns, and are accessible through URLs.
         """
-        plugin = directory.get_plugin(plugin_constants.L3)
+        plugin = directory.get_plugin()
         db = DBPlugin()
         endpoints = []
         rpc_context = context.get_admin_context_without_session()
@@ -84,12 +83,12 @@ class Acioperations(api_extensions.ExtensionDescriptor):
 
         # config endpoint
         # dump hostgroup dict / aci config
-        res = Resource(ConfigController(plugin, db), faults.FAULT_MAP)
+        res = Resource(ConfigController(), faults.FAULT_MAP)
         config_endpoint = extensions.ResourceExtension('aci-ml2/config', res)
         endpoints.append(config_endpoint)
 
         # hostgroup_mode endpoint
-        res = Resource(HostgroupModeController(plugin, db, rpc_notifier), faults.FAULT_MAP)
+        res = Resource(HostgroupModeController(db, rpc_notifier), faults.FAULT_MAP)
         hg_mode_endpoint = extensions.ResourceExtension('aci-ml2/hostgroup-modes', res)
         endpoints.append(hg_mode_endpoint)
 
@@ -108,10 +107,6 @@ extensions.append_api_extensions_path(networking_aci.extensions.__path__)
 
 
 class ConfigController(wsgi.Controller):
-    def __init__(self, plugin, db):
-        super(ConfigController, self).__init__()
-        self.plugin = plugin
-
     @check_cloud_admin
     def index(self, request, **kwargs):
         """Show all hostgroup, fixed bindings and address scopes"""
@@ -144,9 +139,8 @@ class ConfigController(wsgi.Controller):
 
 
 class HostgroupModeController(wsgi.Controller):
-    def __init__(self, plugin, db, rpc_notifier):
+    def __init__(self, db, rpc_notifier):
         super(HostgroupModeController, self).__init__()
-        self.plugin = plugin
         self.db = db
         self.rpc_notifier = rpc_notifier
 
