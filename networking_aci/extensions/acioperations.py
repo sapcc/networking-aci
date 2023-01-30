@@ -179,8 +179,8 @@ class HostgroupModeController(wsgi.Controller):
             physnet_to_check = hg_config['physical_network']
             fuzzy = False
 
-        for segment_id in self.db.get_segment_ids_by_physnet(request.ctx, physnet_to_check, fuzzy_match=fuzzy):
-            hosts = self.db.get_hosts_on_segment(request.ctx, segment_id)
+        for segment_id in self.db.get_segment_ids_by_physnet(request.context, physnet_to_check, fuzzy_match=fuzzy):
+            hosts = self.db.get_hosts_on_segment(request.context, segment_id)
             for host in hg_config['hosts']:
                 if host in hosts:
                     LOG.error("Denied API request to switch hostgroup %s to %s mode, host %s still bound in segment %s",
@@ -189,7 +189,7 @@ class HostgroupModeController(wsgi.Controller):
                                                "present in segment {}"
                                                .format(host, segment_id))
 
-        if self.db.set_hostgroup_mode(request.ctx, hostgroup_name, new_mode):
+        if self.db.set_hostgroup_mode(request.context, hostgroup_name, new_mode):
             LOG.info("Hostgroup %s set to mode %s", hostgroup_name, new_mode)
 
             hg_config = ACI_CONFIG.get_hostgroup(hostgroup_name)
