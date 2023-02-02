@@ -35,7 +35,10 @@ class AciNeutronAgentTest(base.BaseTestCase):
         sys.modules['cobra.model'] = mock.MagicMock()
         sys.modules['cobra.model.fv'] = mock.MagicMock()
         sys.modules['cobra.modelimpl.l3ext.out'] = mock.MagicMock()
+
+        from networking_aci.plugins.ml2.drivers.mech_aci.agent.entry_point import register_options
         from networking_aci.plugins.ml2.drivers.mech_aci.agent.aci_agent import AciNeutronAgent
+        register_options()
 
         self.aci_agent = AciNeutronAgent()
         self.aci_agent.agent_rpc = mock.MagicMock()
