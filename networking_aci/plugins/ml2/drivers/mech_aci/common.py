@@ -254,7 +254,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
 
 def get_segments(context, network_id):
-    return ml2_db.get_network_segments(context, network_id)
+    return ml2_db.get_network_segments(context, network_id, filter_dynamic=None)
 
 
 def get_switch_from_local_link(binding_profile):
