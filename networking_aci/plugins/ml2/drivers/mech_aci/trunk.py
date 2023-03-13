@@ -131,7 +131,7 @@ class ACITrunkDriver(base.DriverBase):
             return
 
         LOG.info("Trunk create called, resource %s payload %s trunk id %s",
-                 resource, payload, payload.trunk_id)
+                 resource, payload, payload.resource_id)
         self._bind_subports(ctx, parent, payload.states[0], payload.states[0].sub_ports)
         payload.states[0].update(status=trunk_const.TRUNK_ACTIVE_STATUS)
 
@@ -140,7 +140,7 @@ class ACITrunkDriver(base.DriverBase):
         if not parent:
             return
 
-        LOG.info("Trunk %s delete called", payload.trunk_id)
+        LOG.info("Trunk %s delete called", payload.resource_id)
         self._bind_subports(ctx, parent, payload.states[0], payload.states[0].sub_ports, delete=True)
 
     def subport_create(self, resource, event, trunk_plugin, payload):
