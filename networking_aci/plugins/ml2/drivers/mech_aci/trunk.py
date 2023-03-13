@@ -77,7 +77,7 @@ class ACITrunkDriver(base.DriverBase):
         elif resource == resources.SUBPORTS:
             # Subports resource contains states
             # Event: https://github.com/sapcc/neutron/blob/e49485f2aa7dd48f57f2d94080a37c49306e87d4/neutron/services/trunk/plugin.py#L362
-            current_state == payload.states[0]
+            current_state = payload.states[0]
         else:
             raise NeutronException("Unsupported type of resource {}".format(resource))
         ctx, parent = self._get_context_and_parent_port(current_state.port_id)
