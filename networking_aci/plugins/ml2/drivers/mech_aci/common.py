@@ -277,7 +277,7 @@ def get_switch_from_local_link(binding_profile):
                 LOG.error("Cannot determine switch for local link info %s in binding profile %s.",
                           lli[0], binding_profile)
         else:
-            LOG.error("Local information %s is invalid in binding profile %s.",
+            LOG.debug("Local information %s contains no binding host / switch info in profile %s, ignoring it",
                       lli, binding_profile)
 
 
