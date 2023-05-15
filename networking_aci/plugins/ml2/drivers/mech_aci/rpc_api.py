@@ -197,10 +197,9 @@ class AgentRpcCallback(object):
 class ACIRpcClientAPI(object):
     version = '1.0'
 
-    def __init__(self, rpc_context):
+    def __init__(self):
         target = oslo_messaging.Target(topic=aci_const.ACI_TOPIC, version='1.0')
         self.client = n_rpc.get_client(target)
-        self.rpc_context = rpc_context
 
     def _topic(self, action=topics.CREATE, host=None):
         return topics.get_topic_name(topics.AGENT, aci_const.ACI_TOPIC, action, host)
@@ -208,37 +207,38 @@ class ACIRpcClientAPI(object):
     def _fanout(self):
         return self.client.prepare(version=self.version, topic=self._topic(), fanout=True)
 
-    def bind_port(self, port, host_config, segment, next_segment):
-        self._fanout().cast(self.rpc_context, 'bind_port', port=port, host_config=host_config, segment=segment,
+    def bind_port(self, context, port, host_config, segment, next_segment):
+        self._fanout().cast(context, 'bind_port', port=port, host_config=host_config, segment=segment,
                             next_segment=next_segment)
 
-    def delete_port(self, port, host_config, clearable_phys_doms, clearable_bm_entities, reset_bindings_to_infra):
-        self._fanout().cast(self.rpc_context, 'delete_port', port=port, host_config=host_config,
+    def delete_port(self, context, port, host_config, clearable_phys_doms, clearable_bm_entities,
+                    reset_bindings_to_infra):
+        self._fanout().cast(context, 'delete_port', port=port, host_config=host_config,
                             clearable_phys_doms=clearable_phys_doms, clearable_bm_entities=clearable_bm_entities,
                             reset_bindings_to_infra=reset_bindings_to_infra)
 
-    def create_network(self, network, external):
-        self._fanout().cast(self.rpc_context, 'create_network', network=network, external=external)
+    def create_network(self, context, network, external):
+        self._fanout().cast(context, 'create_network', network=network, external=external)
 
-    def delete_network(self, network):
-        self._fanout().cast(self.rpc_context, 'delete_network', network=network)
+    def delete_network(self, context, network):
+        self._fanout().cast(context, 'delete_network', network=network)
 
-    def create_subnet(self, subnet, external=False, address_scope_name=None):
-        self._fanout().cast(self.rpc_context, 'create_subnet', subnet=subnet, external=external,
+    def create_subnet(self, context, subnet, external=False, address_scope_name=None):
+        self._fanout().cast(context, 'create_subnet', subnet=subnet, external=external,
                             address_scope_name=address_scope_name)
 
-    def delete_subnet(self, subnet, external=False, address_scope_name=None, last_on_network=None):
-        self._fanout().cast(self.rpc_context, 'delete_subnet', subnet=subnet, external=external,
+    def delete_subnet(self, context, subnet, external=False, address_scope_name=None, last_on_network=None):
+        self._fanout().cast(context, 'delete_subnet', subnet=subnet, external=external,
                             address_scope_name=address_scope_name, last_on_network=last_on_network)
 
-    def clean_baremetal_objects(self, resource_name):
-        self._fanout().cast(self.rpc_context, 'clean_baremetal_objects', resource_name=resource_name)
+    def clean_baremetal_objects(self, context, resource_name):
+        self._fanout().cast(context, 'clean_baremetal_objects', resource_name=resource_name)
 
-    def sync_direct_mode_config(self, host_config):
-        self._fanout().cast(self.rpc_context, 'sync_direct_mode_config', host_config=host_config)
+    def sync_direct_mode_config(self, context, host_config):
+        self._fanout().cast(context, 'sync_direct_mode_config', host_config=host_config)
 
-    def sync_network(self, network):
-        self._fanout().cast(self.rpc_context, 'sync_network', network=network)
+    def sync_network(self, context, network):
+        self._fanout().cast(context, 'sync_network', network=network)
 
 
 class AgentRpcClientAPI(object):

@@ -16,7 +16,6 @@ from neutron_lib.api.definitions import availability_zone as az_def
 from neutron_lib.api.definitions import external_net as extnet_def
 from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
-from neutron_lib import context
 from neutron_lib import constants as n_const
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import directory
@@ -51,8 +50,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.allocations_manager = allocations.AllocationsManager(self.db)
 
         ACI_CONFIG.db = self.db
-        self.context = context.get_admin_context_without_session()
-        self.rpc_notifier = rpc_api.ACIRpcClientAPI(self.context)
+        self.rpc_notifier = rpc_api.ACIRpcClientAPI()
         self.trunk_driver = ACITrunkDriver.create()
         self.vif_details = {
             portbindings.VIF_DETAILS_CONNECTIVITY: portbindings.CONNECTIVITY_L2
@@ -188,7 +186,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         if not hostgroup['direct_mode']:
             # for direct mode the rpc call will be made by the next level binding
             ACI_CONFIG.clean_bindings(hostgroup, allocation.segment_id, level=level)
-            self.rpc_notifier.bind_port(port, hostgroup, segment, next_segment)
+            self.rpc_notifier.bind_port(context._plugin_context, port, hostgroup, segment, next_segment)
         context.continue_binding(segment["id"], [next_segment])
 
     def _bind_port_direct(self, context, port, hostgroup_name, hostgroup):
@@ -213,7 +211,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                     else:
                         port_type_str = "access port"
 
-                    self.rpc_notifier.bind_port(port, hostgroup, segment, next_segment)
+                    self.rpc_notifier.bind_port(context._plugin_context, port, hostgroup, segment, next_segment)
                 else:
                     port_type_str = "finalized portbinding w/o direct-mode set"
                     vif_details['aci_finalized_binding'] = True
@@ -235,10 +233,10 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
     def create_network_postcommit(self, context):
         external = self._network_external(context)
-        self.rpc_notifier.create_network(context.current, external=external)
+        self.rpc_notifier.create_network(context._plugin_context, context.current, external=external)
 
     def delete_network_postcommit(self, context):
-        self.rpc_notifier.delete_network(context.current)
+        self.rpc_notifier.delete_network(context._plugin_context, context.current)
 
     def create_subnet_postcommit(self, context):
         if not CONF.ml2_aci.handle_all_l3_gateways or \
@@ -266,7 +264,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                              .format(context.current['id'])))
                 return
 
-        self.rpc_notifier.create_subnet(context.current, external=external, address_scope_name=address_scope_name)
+        self.rpc_notifier.create_subnet(context._plugin_context, context.current, external=external,
+                                        address_scope_name=address_scope_name)
 
     def delete_subnet_postcommit(self, context):
         if not CONF.ml2_aci.handle_all_l3_gateways or \
@@ -285,8 +284,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         external = self._subnet_external(context)
         subnets = context._plugin.get_subnets_by_network(context._plugin_context, network_id)
         last_on_network = len(subnets) == 0
-        self.rpc_notifier.delete_subnet(context.current, external=external, address_scope_name=address_scope_name,
-                                        last_on_network=last_on_network)
+        self.rpc_notifier.delete_subnet(context._plugin_context, context.current, external=external,
+                                        address_scope_name=address_scope_name, last_on_network=last_on_network)
 
     @registry.receives(aci_const.CC_FABRIC_TRANSIT, [events.AFTER_CREATE])
     def on_fabric_transit_created(self, resource, event, trigger, payload):
@@ -306,7 +305,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         sync_data = self.rpc_api._get_network(network)
 
         # send to agent
-        self.rpc_notifier.sync_network(sync_data)
+        self.rpc_notifier.sync_network(payload.context, sync_data)
 
     @registry.receives(aci_const.CC_FABRIC_NET_GW, [events.BEFORE_UPDATE])
     def on_network_gateway_move(self, resource, event, trigger, payload):
@@ -340,8 +339,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         for n, (subnet, address_scope_name) in enumerate(subnets_to_delete):
             last_on_network = n + 1 == len(network['subnets'])
-            self.rpc_notifier.delete_subnet(subnet, external=True, address_scope_name=address_scope_name,
-                                            last_on_network=last_on_network)
+            self.rpc_notifier.delete_subnet(payload.context, subnet, external=True,
+                                            address_scope_name=address_scope_name, last_on_network=last_on_network)
 
     # Port callbacks
     def create_port_precommit(self, context):
@@ -487,7 +486,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         LOG.debug("Sending RPC delete_port for port %s hostgroup %s with clearable physdoms %s "
                   "clearable bm-entities %s and reset-bindings-to-infra %s",
                   port['id'], hostgroup['name'], clearable_physdoms, clearable_bm_entities, reset_bindings_to_infra)
-        self.rpc_notifier.delete_port(port, hostgroup, clearable_physdoms, clearable_bm_entities,
+        self.rpc_notifier.delete_port(context, port, hostgroup, clearable_physdoms, clearable_bm_entities,
                                       reset_bindings_to_infra)
 
     def _get_clearable_phys_doms(self, context, network_id, local_segment, host_config, project_id):
