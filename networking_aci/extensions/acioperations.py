@@ -20,7 +20,6 @@ from neutron import policy
 from neutron import wsgi
 from neutron_lib.api import extensions as api_extensions
 from neutron_lib.api import faults
-from neutron_lib import context
 from neutron_lib.plugins import directory
 from oslo_log import log
 from webob import exc as web_exc
@@ -78,8 +77,7 @@ class Acioperations(api_extensions.ExtensionDescriptor):
         plugin = directory.get_plugin()
         db = DBPlugin()
         endpoints = []
-        rpc_context = context.get_admin_context_without_session()
-        rpc_notifier = rpc_api.ACIRpcClientAPI(rpc_context)
+        rpc_notifier = rpc_api.ACIRpcClientAPI()
 
         # config endpoint
         # dump hostgroup dict / aci config
@@ -197,7 +195,7 @@ class HostgroupModeController(wsgi.Controller):
             if hg_config['hostgroup_mode'] == aci_const.MODE_INFRA:
                 # on switch from baremetal --> infra: switching policy group of port selectors, etc.
                 try:
-                    self.rpc_notifier.sync_direct_mode_config(hg_config)
+                    self.rpc_notifier.sync_direct_mode_config(request.context, hg_config)
                     aci_objects_update_succeeded = True
                 except Exception:
                     LOG.exception("Could not update bindings on ACI, rpc call failed")
@@ -246,6 +244,6 @@ class NetworksController(wsgi.Controller):
         network_id = kwargs.pop('id')
         network = self.plugin.get_network(request.context, network_id)
         sync_data = self.rpc_api._get_network(network)
-        self.rpc_notifier.sync_network(sync_data)
+        self.rpc_notifier.sync_network(request.context, sync_data)
 
         return {'sync_sent': True}
