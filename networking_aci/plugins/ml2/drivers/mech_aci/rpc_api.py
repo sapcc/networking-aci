@@ -242,7 +242,7 @@ class ACIRpcClientAPI(object):
 class AgentRpcClientAPI(object):
     version = '1.0'
 
-    def __init__(self, rpc_context):
+    def __init__(self):
         target = oslo_messaging.Target(topic=aci_const.ACI_TOPIC, version='1.0')
         self.client = n_rpc.get_client(target)
 
