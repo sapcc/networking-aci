@@ -302,7 +302,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                       host, network_id, e)
             return
 
-        sync_data = self.rpc_api._get_network(network)
+        sync_data = self.rpc_api._get_network(payload.context, network)
 
         # send to agent
         self.rpc_notifier.sync_network(payload.context, sync_data)

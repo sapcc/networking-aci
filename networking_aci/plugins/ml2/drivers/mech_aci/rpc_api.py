@@ -14,7 +14,6 @@
 import time
 
 from neutron_lib.agent import topics
-from neutron_lib import context
 from neutron_lib.exceptions import NetworkNotFound
 from neutron_lib import rpc as n_rpc
 from neutron.extensions import tagging
@@ -67,7 +66,6 @@ class AgentRpcCallback(object):
 
     def __init__(self, db):
         self.db = db
-        self.context = context.get_admin_context()
         self.tag_plugin = tag_plugin.TagPlugin()
 
     @log_helpers.log_method_call
@@ -77,16 +75,16 @@ class AgentRpcCallback(object):
     @log_helpers.log_method_call
     def get_network(self, rpc_context, network_id):
         network = self.db.get_network(rpc_context, network_id)
-        return self._get_network(network)
+        return self._get_network(rpc_context, network)
 
     @log_helpers.log_method_call
     def get_networks(self, rpc_context, limit=None, marker=None):
         LOG.debug("limit %s marker %s", limit, marker)
         result = []
         try:
-            networks = self.db.get_networks(self.context, sorts=[('id', 'desc')], limit=limit, marker=marker)
+            networks = self.db.get_networks(rpc_context, sorts=[('id', 'desc')], limit=limit, marker=marker)
             for network in networks:
-                result.append(self._get_network(network))
+                result.append(self._get_network(rpc_context, network))
         except NetworkNotFound:
             LOG.debug("Network marker not found: %s", marker)
 
@@ -96,13 +94,13 @@ class AgentRpcCallback(object):
 
     @log_helpers.log_method_call
     def get_network_ids(self, rpc_context):
-        return self.db.get_network_ids(self.context)
+        return self.db.get_network_ids(rpc_context)
 
     @log_helpers.log_method_call
     def get_networks_count(self, rpc_context):
-        return self.db.get_networks_count(self.context)
+        return self.db.get_networks_count(rpc_context)
 
-    def _get_network(self, network):
+    def _get_network(self, context, network):
         start = time.time()
         network_id = network['id']
 
@@ -117,7 +115,7 @@ class AgentRpcCallback(object):
 
         # fixed bindings
         try:
-            tags = self.tag_plugin.get_tags(self.context, 'networks', network_id).get('tags', [])
+            tags = self.tag_plugin.get_tags(context, 'networks', network_id).get('tags', [])
         except tagging.TagResourceNotFound:
             LOG.warning("Cannot find network {} while attempting to check static binding tag".format(network_id))
             tags = []
@@ -129,13 +127,13 @@ class AgentRpcCallback(object):
                 result['fixed_bindings'].append(network_fixed_binding)
 
         # subnets
-        subnets = self.db.get_subnets_by_network(self.context, network.get('id'))
+        subnets = self.db.get_subnets_by_network(context, network.get('id'))
         for subnet in subnets:
             pool_id = subnet.get('subnetpool_id')
             address_scope_name = None
 
             if pool_id:
-                address_scope_name = self.db.get_address_scope_name(self.context, pool_id)
+                address_scope_name = self.db.get_address_scope_name(context, pool_id)
             result['subnets'].append({
                 'id': subnet.get('id'),
                 'network_id': network_id,
@@ -145,14 +143,14 @@ class AgentRpcCallback(object):
             })
 
         # bindings
-        segments = common.get_segments(self.context, network_id)
+        segments = common.get_segments(context, network_id)
         segment_dict = {}
         for segment in segments:
             segment_dict[segment.get('id')] = segment
 
         processed_hostgroups = []
         transit_hgs = ACI_CONFIG.get_transit_hostgroups()
-        host_segments = self.db.get_hosts_on_network(self.context, network_id, level=1, with_segment=True,
+        host_segments = self.db.get_hosts_on_network(context, network_id, level=1, with_segment=True,
                                                      transit_hostgroups=transit_hgs)
         for host, segment_id in host_segments:
             hostgroup_name = ACI_CONFIG.get_hostgroup_name_by_host(host)
