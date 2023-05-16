@@ -243,7 +243,7 @@ class NetworksController(wsgi.Controller):
     def update(self, request, **kwargs):
         network_id = kwargs.pop('id')
         network = self.plugin.get_network(request.context, network_id)
-        sync_data = self.rpc_api._get_network(network)
+        sync_data = self.rpc_api._get_network(request.context, network)
         self.rpc_notifier.sync_network(request.context, sync_data)
 
         return {'sync_sent': True}
