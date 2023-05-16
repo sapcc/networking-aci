@@ -2,7 +2,6 @@ import logging
 
 from neutron_lib.callbacks import events, registry, resources
 from neutron_lib import constants as n_const
-from neutron_lib import context
 from neutron_lib.plugins import directory
 from neutron_lib.exceptions import NeutronException
 from neutron_lib.api.definitions import port as p_api
@@ -58,16 +57,15 @@ class ACITrunkDriver(base.DriverBase):
         registry.subscribe(self.subport_create, resources.SUBPORTS, events.AFTER_CREATE)
         registry.subscribe(self.subport_delete, resources.SUBPORTS, events.AFTER_DELETE)
 
-    def _get_context_and_parent_port(self, parent_port_id):
-        """Get admin context and parent port
+    def _get_parent_port(self, context, parent_port_id):
+        """Get parent port from payload
 
-        Return None, None if this driver is not responsible for this trunk/port
+        Return None if this driver is not responsible for this trunk/port
         """
-        ctx = context.get_admin_context()
-        parent = self.core_plugin.get_port(ctx, parent_port_id)
+        parent = self.core_plugin.get_port(context, parent_port_id)
         if not self.is_interface_compatible(parent[portbindings.VIF_TYPE]):
-            return None, None
-        return ctx, parent
+            return None
+        return parent
 
     def trunk_check_valid(self, resource, event, trunk_plugin, payload):
         if resource == resources.TRUNK:
@@ -80,7 +78,7 @@ class ACITrunkDriver(base.DriverBase):
             current_state = payload.states[0]
         else:
             raise NeutronException("Unsupported type of resource {}".format(resource))
-        ctx, parent = self._get_context_and_parent_port(current_state.port_id)
+        parent = self._get_parent_port(payload.context, current_state.port_id)
         if not parent:
             return
 
@@ -100,7 +98,7 @@ class ACITrunkDriver(base.DriverBase):
             # Event: https://github.com/sapcc/neutron/blob/e49485f2aa7dd48f57f2d94080a37c49306e87d4/neutron/services/trunk/plugin.py#L373
             return
 
-        vlan_map = ACI_CONFIG.db.get_trunk_vlan_usage_on_project(ctx, parent['project_id'])
+        vlan_map = ACI_CONFIG.db.get_trunk_vlan_usage_on_project(payload.contex, parent['project_id'])
         bm_access_ranges = common.get_set_from_ranges(hostgroup['baremetal_access_vlan_ranges'])
         for subport in payload.metadata['subports']:
             if subport.segmentation_id in ACI_CONFIG.baremetal_reserved_vlans or \
@@ -117,7 +115,7 @@ class ACITrunkDriver(base.DriverBase):
             # check if any subport's segmentation id violates vlan consistency
             # --> in the subport's project no other network is allowed to use the segmentation id
             if subport.segmentation_id in vlan_map:
-                port = self.core_plugin.get_port(ctx, subport.port_id)
+                port = self.core_plugin.get_port(payload.context, subport.port_id)
                 nets = vlan_map[subport.segmentation_id]
                 if nets and port['network_id'] not in nets:
                     raise TrunkSegmentationNotConsistentInProject(segmentation_id=subport.segmentation_id,
@@ -126,38 +124,38 @@ class ACITrunkDriver(base.DriverBase):
                                                                   network_id=port['network_id'])
 
     def trunk_create(self, resource, event, trunk_plugin, payload):
-        ctx, parent = self._get_context_and_parent_port(payload.states[0].port_id)
+        parent = self._get_parent_port(payload.context, payload.states[0].port_id)
         if not parent:
             return
 
         LOG.info("Trunk create called, resource %s payload %s trunk id %s",
                  resource, payload, payload.resource_id)
-        self._bind_subports(ctx, parent, payload.states[0], payload.states[0].sub_ports)
+        self._bind_subports(payload.context, parent, payload.states[0], payload.states[0].sub_ports)
         payload.states[0].update(status=trunk_const.TRUNK_ACTIVE_STATUS)
 
     def trunk_delete(self, resource, event, trunk_plugin, payload):
-        ctx, parent = self._get_context_and_parent_port(payload.states[0].port_id)
+        parent = self._get_parent_port(payload.context, payload.states[0].port_id)
         if not parent:
             return
 
         LOG.info("Trunk %s delete called", payload.resource_id)
-        self._bind_subports(ctx, parent, payload.states[0], payload.states[0].sub_ports, delete=True)
+        self._bind_subports(payload.context, parent, payload.states[0], payload.states[0].sub_ports, delete=True)
 
     def subport_create(self, resource, event, trunk_plugin, payload):
-        ctx, parent = self._get_context_and_parent_port(payload.states[0].port_id)
+        parent = self._get_parent_port(payload.context, payload.states[0].port_id)
         if not parent:
             return
 
-        self._bind_subports(ctx, parent, payload.states[0], payload.metadata['subports'])
+        self._bind_subports(payload.context, parent, payload.states[0], payload.metadata['subports'])
 
     def subport_delete(self, resource, event, trunk_plugin, payload):
-        ctx, parent = self._get_context_and_parent_port(payload.states[0].port_id)
+        parent = self._get_parent_port(payload.context, payload.states[0].port_id)
         if not parent:
             return
 
-        self._bind_subports(ctx, parent, payload.states[0], payload.metadata['subports'], delete=True)
+        self._bind_subports(payload.context, parent, payload.states[0], payload.metadata['subports'], delete=True)
 
-    def _bind_subports(self, ctx, parent, trunk, subports, delete=False):
+    def _bind_subports(self, context, parent, trunk, subports, delete=False):
         for subport in subports:
             LOG.info("%s parent %s for subport %s on trunk %s",
                      "Setting" if not delete else "Unsetting",
@@ -192,7 +190,7 @@ class ACITrunkDriver(base.DriverBase):
                         'status': n_const.PORT_STATUS_DOWN,
                     },
                 }
-            self.core_plugin.update_port(ctx, subport.port_id, port_data)
+            self.core_plugin.update_port(context, subport.port_id, port_data)
 
         num_deleted_subports = len(subports) if delete else 0
         if len(trunk.sub_ports) - num_deleted_subports > 0:
