@@ -102,8 +102,8 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                 self.aci_manager.clean_baremetal_objects(bm_entity)
 
     @log_helpers.log_method_call
-    def create_network_postcommit(self, network, external):
-        self.aci_manager.ensure_domain_and_epg(network['id'], external=external)
+    def create_network_postcommit(self, context, network, external):
+        self.aci_manager.ensure_domain_and_epg(context, network['id'], external=external)
 
     @log_helpers.log_method_call
     def delete_network_postcommit(self, network, **kwargs):
@@ -127,8 +127,8 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.aci_manager.ensure_hostgroup_mode_config(host_config, source="via rpc api")
 
     @log_helpers.log_method_call
-    def sync_network_agent(self, network):
-        return self.aci_manager.sync_network(network)
+    def sync_network_agent(self, context, network):
+        return self.aci_manager.sync_network(context, network)
 
     # End RPC callbacks
 
@@ -136,10 +136,9 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     def setup_rpc(self):
         # RPC network init
-        self.context = context.get_admin_context()
         self.plugin_rpc = agent_rpc.PluginApi(topics.PLUGIN)
         self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
-        self.agent_rpc = rpc_api.AgentRpcClientAPI(self.context)
+        self.agent_rpc = rpc_api.AgentRpcClientAPI()
 
         # Define the listening consumers for the agent
         consumers = [[aci_const.ACI_TOPIC, topics.CREATE],
@@ -156,9 +155,9 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         heartbeat.start(interval=report_interval, stop_on_exception=False)
 
     def _report_state(self):
+        ctx = context.get_admin_context_without_session()
         try:
-            self.state_rpc.report_state(self.context,
-                                        self.agent_state)
+            self.state_rpc.report_state(ctx, self.agent_state)
             self.agent_state.pop('start_flag', None)
         except Exception:
             LOG.exception(_LE("Failed reporting state!"))
@@ -201,9 +200,11 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
         if self.sync_active:
             while self._check_and_handle_signal():
+                # create a new context for each sync loop run
+                ctx = context.get_admin_context_without_session()
                 try:
                     start = time.time()
-                    neutron_binding_count = self.agent_rpc.get_binding_count()
+                    neutron_binding_count = self.agent_rpc.get_binding_count(ctx)
 
                     if neutron_binding_count == 0:
                         LOG.warning("Skipping RPC loop due to zero binding count")
@@ -212,8 +213,8 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                         bds = self.aci_manager.get_all_bridge_domains()
                         epgs = self.aci_manager.get_all_epgs()
-                        neutron_network_ids = self.agent_rpc.get_network_ids()
-                        neutron_network_count = self.agent_rpc.get_networks_count()
+                        neutron_network_ids = self.agent_rpc.get_network_ids(ctx)
+                        neutron_network_count = self.agent_rpc.get_networks_count(ctx)
 
                         LOG.info("Currently managing {} neutron networks and {} Bridge domains and {} EPGS"
                                  .format(neutron_network_count, len(bds), len(epgs)))
@@ -244,7 +245,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                 LOG.info("Deleting EPG and BD for network %s", network_id)
                                 self.aci_manager.delete_domain_and_epg(network_id)
 
-                        neutron_networks = self.agent_rpc.get_networks(limit=str(self.sync_batch_size),
+                        neutron_networks = self.agent_rpc.get_networks(ctx, limit=str(self.sync_batch_size),
                                                                        marker=self.sync_marker)
 
                         if len(neutron_networks) == 0:
@@ -253,7 +254,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                         for network in neutron_networks:
                             try:
-                                self.aci_manager.sync_network(network)
+                                self.aci_manager.sync_network(ctx, network)
                             except Exception:
                                 LOG.exception("Error while attempting to apply configuration to network %s",
                                               network.get('id'))
