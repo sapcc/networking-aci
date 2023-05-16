@@ -162,7 +162,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                 segmentation_id = port['binding:profile'][aci_const.TRUNK_PROFILE].get('segmentation_id', 1)
             else:
                 segmentation_id = None  # let the allocater choose a vlan
-            allocation = self.allocations_manager.allocate_baremetal_segment(network, hostgroup, level, segmentation_id)
+            allocation = self.allocations_manager.allocate_baremetal_segment(context._plugin_context, network,
+                                                                             hostgroup, level, segmentation_id)
             segment_id = allocation.id
             segmentation_id = allocation.segmentation_id
 

@@ -15,7 +15,6 @@
 import random
 
 from neutron_lib.db import api as db_api
-from neutron_lib import context
 from neutron.db.models import segment as ml2_models
 from neutron.plugins.ml2 import models
 from oslo_config import cfg
@@ -233,7 +232,7 @@ class AllocationsManager(object):
             return True
 
     @db_api.retry_db_errors
-    def allocate_baremetal_segment(self, network, hostgroup, level, segmentation_id):
+    def allocate_baremetal_segment(self, context, network, hostgroup, level, segmentation_id):
         """Allocate a "baremetal segment" (with or without pre-specified id)
 
         Baremetal segments are dynamically allocated based on their physnet (physnet name will be
@@ -262,8 +261,7 @@ class AllocationsManager(object):
         _release_vxlan_segment().
         """
         is_access = segmentation_id is None
-        ctx = context.get_admin_context()
-        session = ctx.session
+        session = context.session
         segment_type = hostgroup.get('segment_type', 'vlan')
         segment_physnet = hostgroup.get('physical_network')
         network_id = network['id']
@@ -297,7 +295,7 @@ class AllocationsManager(object):
             # 2. sanity checks
             if is_access:
                 # for access mode: check that no other network has bound this in host mode
-                host_segments = self.db.get_hosts_on_physnet(ctx, segment_physnet, level=1,
+                host_segments = self.db.get_hosts_on_physnet(context, segment_physnet, level=1,
                                                              with_segment=True, with_segmentation=True)
                 for far_host, far_segment_id, far_segmentation_id in host_segments:
                     if far_host in hostgroup['hosts'] and far_segmentation_id in access_id_pool:
