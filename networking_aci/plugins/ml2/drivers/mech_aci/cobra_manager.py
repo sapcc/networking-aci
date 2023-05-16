@@ -15,7 +15,6 @@
 from cobra.model import fv, fvns, infra, phys
 import cobra.modelimpl.l3ext.out
 import netaddr
-from neutron_lib import context
 from oslo_config import cfg
 from oslo_log import log
 
@@ -49,7 +48,6 @@ class CobraManager(object):
                                              CONF.ml2_aci.apic_password,
                                              CONF.ml2_aci.apic_use_ssl)
 
-        self.context = context.get_admin_context()
         self.tenant_manager = tenant_manager
 
     @property
@@ -89,7 +87,7 @@ class CobraManager(object):
         else:
             return "regular"  # trunk
 
-    def ensure_domain_and_epg(self, network_id, external=False):
+    def ensure_domain_and_epg(self, context, network_id, external=False):
         tenant = self.get_or_create_tenant(network_id)
         ep_retention_policy = None
 
@@ -131,8 +129,8 @@ class CobraManager(object):
         # handle MOs with different root contexts
         self.apic.commit(bd_objs)
         self.apic.commit([app, epg, rsbd])
-        self.agent_plugin.tag_network(network_id, "monsoon3::aci::tenant::{}"
-                                                  .format(self.tenant_manager.get_tenant_name(network_id)))
+        tenant_tag = "monsoon3::aci::tenant::{}".format(self.tenant_manager.get_tenant_name(network_id))
+        self.agent_plugin.tag_network(context, network_id, tenant_tag)
 
     def delete_domain_and_epg(self, network_id, transaction=None):
         tenant = self.get_tenant(network_id)
@@ -432,11 +430,11 @@ class CobraManager(object):
     def get_tenant_name(self, network_id):
         return self.tenant_manager.get_tenant_name(network_id)
 
-    def sync_network(self, network):
+    def sync_network(self, context, network):
         self.clean_subnets(network)
         self.clean_physdoms(network)
         self.clean_bindings(network)
-        self.ensure_domain_and_epg(network.get('id'), external=network.get('router:external'))
+        self.ensure_domain_and_epg(context, network.get('id'), external=network.get('router:external'))
 
         if CONF.ml2_aci.handle_all_l3_gateways and aci_const.CC_FABRIC_L3_GATEWAY_TAG not in network['tags']:
             for subnet in network.get('subnets'):

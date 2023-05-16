@@ -46,6 +46,7 @@ class ConsistencyCheck(object):
         self.mode = mode
 
         # Set up is similar to agent - need to review if compatible and how to refactor
+        self.context = context.get_admin_context()
         self.conf = conf
         self.aci_config = self.conf.ml2_aci
         self.conf.log_opt_values(LOG, logging.DEBUG)
@@ -63,8 +64,6 @@ class ConsistencyCheck(object):
         self.db = DbPlugin()  # db.NeutronDbPluginV2()
         self.tag_plugin = tag_plugin.TagPlugin()
         self.aci_manager = cobra_manager.CobraManager(self.tenant_manager)
-
-        self.context = context.get_admin_context()
 
         self.network = None
         self.external = False
@@ -197,7 +196,7 @@ class ConsistencyCheck(object):
                 self.bindings.append({"port": path.tDn, "encap": path.encap})
 
     def sync(self):
-        self.aci_manager.ensure_domain_and_epg(self.network_id, external=self.external)
+        self.aci_manager.ensure_domain_and_epg(self.context, self.network_id, external=self.external)
 
         subnets = self.db.get_subnets_by_network(self.context, self.network_id)
 

@@ -42,7 +42,7 @@ class ACIRpcAPI(object):
                                     reset_bindings_to_infra)
 
     def create_network(self, rpc_context, network, external=False):
-        self.create_network_postcommit(network, external)
+        self.create_network_postcommit(rpc_context, network, external)
 
     def delete_network(self, rpc_context, network):
         self.delete_network_postcommit(network)
@@ -60,7 +60,7 @@ class ACIRpcAPI(object):
         self.sync_direct_mode_config_agent(host_config)
 
     def sync_network(self, rpc_context, network):
-        self.sync_network_agent(network)
+        self.sync_network_agent(rpc_context, network)
 
 
 class AgentRpcCallback(object):
@@ -76,7 +76,7 @@ class AgentRpcCallback(object):
 
     @log_helpers.log_method_call
     def get_network(self, rpc_context, network_id):
-        network = self.db.get_network(self.context, network_id)
+        network = self.db.get_network(rpc_context, network_id)
         return self._get_network(network)
 
     @log_helpers.log_method_call
@@ -247,25 +247,24 @@ class AgentRpcClientAPI(object):
     def __init__(self, rpc_context):
         target = oslo_messaging.Target(topic=aci_const.ACI_TOPIC, version='1.0')
         self.client = n_rpc.get_client(target)
-        self.rpc_context = rpc_context
 
     def _fanout(self):
         return self.client.prepare(version=self.version, topic=aci_const.ACI_TOPIC, fanout=False)
 
-    def get_network(self, network_id):
-        return self._fanout().call(self.rpc_context, 'get_network', network_id=network_id)
+    def get_network(self, context, network_id):
+        return self._fanout().call(context, 'get_network', network_id=network_id)
 
-    def get_networks_count(self):
-        return self._fanout().call(self.rpc_context, 'get_networks_count')
+    def get_networks_count(self, context):
+        return self._fanout().call(context, 'get_networks_count')
 
-    def get_networks(self, limit=None, marker=None):
-        return self._fanout().call(self.rpc_context, 'get_networks', limit=limit, marker=marker)
+    def get_networks(self, context, limit=None, marker=None):
+        return self._fanout().call(context, 'get_networks', limit=limit, marker=marker)
 
-    def get_network_ids(self):
-        return self._fanout().call(self.rpc_context, 'get_network_ids',)
+    def get_network_ids(self, context):
+        return self._fanout().call(context, 'get_network_ids',)
 
-    def get_binding_count(self):
-        return self._fanout().call(self.rpc_context, 'get_binding_count')
+    def get_binding_count(self, context):
+        return self._fanout().call(context, 'get_binding_count')
 
-    def tag_network(self, network_id, tag):
-        return self._fanout().call(self.rpc_context, 'tag_network', network_id=network_id, tag=tag)
+    def tag_network(self, context, network_id, tag):
+        return self._fanout().call(context, 'tag_network', network_id=network_id, tag=tag)
