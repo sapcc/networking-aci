@@ -157,14 +157,14 @@ class AgentRpcCallback(object):
             if not hostgroup_name or hostgroup_name in processed_hostgroups:
                 continue
 
-            hostgroup = ACI_CONFIG.get_hostgroup(hostgroup_name, segment_id, level=1)
+            hostgroup = ACI_CONFIG.get_hostgroup(context, hostgroup_name, segment_id, level=1)
             if not hostgroup:
                 LOG.error("Found hostgroup %s for host %s but not present in dictionary - will not be bound in %s",
                           hostgroup_name, host, network_id)
                 continue
 
             # for mode baremetal: override baremetal_resource_name
-            ACI_CONFIG.annotate_baremetal_info(hostgroup, network_id)
+            ACI_CONFIG.annotate_baremetal_info(context, hostgroup, network_id)
 
             segment = segment_dict[segment_id]
             result['bindings'].append({
