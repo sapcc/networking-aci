@@ -85,7 +85,7 @@ class ACITrunkDriver(base.DriverBase):
         parent_host = common.get_host_from_profile(parent['binding:profile'], parent['binding:host_id'])
         LOG.debug("Trunk check valid called, got port %s with host %s", parent['id'], parent_host)
 
-        hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(parent_host)
+        hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(payload.context, parent_host)
         if not hostgroup:
             raise NeutronException("No hostgroup config found for port {} host {}"
                                    .format(current_state.port_id, parent_host))

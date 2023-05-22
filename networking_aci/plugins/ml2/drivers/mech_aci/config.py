@@ -15,7 +15,6 @@
 import ast
 from copy import deepcopy
 
-from neutron_lib import context
 from neutron.conf import service as service_conf
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -231,7 +230,6 @@ CONF = cfg.CONF
 class ACIConfig:
     def __init__(self):
         self._db = None
-        self._context = None
         self.reset_config()
 
     def reset_config(self):
@@ -246,12 +244,6 @@ class ACIConfig:
         if not self._db:
             raise Exception("DB plugin not present")
         return self._db
-
-    @property
-    def context(self):
-        if not self._context:
-            self._context = context.get_admin_context()
-        return self._context
 
     @db.setter
     def db(self, val):
@@ -351,9 +343,9 @@ class ACIConfig:
     def _parse_pc_policy_groups(self):
         self._pc_policy_groups = self._parse_config("pc-policy-group", pc_policy_group_opts, to_dict=True)
 
-    def _clean_bindings(self, hg, hostgroup_modes, segment_id=None, level=None):
+    def _clean_bindings(self, context, hg, hostgroup_modes, segment_id=None, level=None):
         if segment_id:
-            hosts_on_seg = self.db.get_hosts_on_segment(self.context, segment_id, level)
+            hosts_on_seg = self.db.get_hosts_on_segment(context, segment_id, level)
 
         for child_hg in hg['child_hostgroups']:
             hostgroup_mode = hostgroup_modes.get(child_hg)
@@ -367,7 +359,7 @@ class ACIConfig:
             else:
                 LOG.error("Unknwon or no host mode '%s' for group %s", hostgroup_mode, child_hg)
 
-    def get_hostgroup(self, name, segment_id=None, level=None):
+    def get_hostgroup(self, context, name, segment_id=None, level=None):
         """Returns an adjusted copy of a named hostgroup
 
         This method will create a copy of a named hostgtroup, find out its current mode (none, infra, baremetal)
@@ -378,11 +370,11 @@ class ACIConfig:
         hg = deepcopy(self.hostgroups[name])
         if not hg['direct_mode']:
             # remove all bindings used by child hostgroups in baremetal mode
-            hostgroup_modes = self.db.get_hostgroup_modes(self.context, hg['child_hostgroups'])
-            self._clean_bindings(hg, hostgroup_modes, segment_id, level)
+            hostgroup_modes = self.db.get_hostgroup_modes(context, hg['child_hostgroups'])
+            self._clean_bindings(context, hg, hostgroup_modes, segment_id, level)
         else:
             # add hostgroup_mode, copy parent physnet/segment values for infra mode
-            hg_mode = self.db.get_hostgroup_mode(self.context, name)
+            hg_mode = self.db.get_hostgroup_mode(context, name)
             hg['hostgroup_mode'] = hg_mode
             if hg_mode == aci_const.MODE_INFRA:
                 far_hg = hg['parent_hostgroup']
@@ -401,7 +393,7 @@ class ACIConfig:
 
         return hg
 
-    def clean_bindings(self, hostgroup, segment_id, level):
+    def clean_bindings(self, context, hostgroup, segment_id, level):
         """Clean hostgroup from all bindings from currently-in-use direct bindings, inplace.
 
         This removes all bindings that are currently in use by a baremetal host or
@@ -410,17 +402,17 @@ class ACIConfig:
         if hostgroup['direct_mode']:
             return hostgroup
 
-        hostgroup_modes = self.db.get_hostgroup_modes(self.context, hostgroup['child_hostgroups'])
-        self._clean_bindings(hostgroup, hostgroup_modes, segment_id, level)
+        hostgroup_modes = self.db.get_hostgroup_modes(context, hostgroup['child_hostgroups'])
+        self._clean_bindings(context, hostgroup, hostgroup_modes, segment_id, level)
 
         return hostgroup
 
-    def annotate_baremetal_info(self, hostgroup, network_id, override_project_id=None):
+    def annotate_baremetal_info(self, context, hostgroup, network_id, override_project_id=None):
         if not (hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL):
             return
 
         # since baremetal resources are scoped to a project we need to find out if they are in a project
-        ports = self.db.get_ports_on_network_by_physnet_prefix(self.context, network_id, self.baremetal_resource_prefix)
+        ports = self.db.get_ports_on_network_by_physnet_prefix(context, network_id, self.baremetal_resource_prefix)
         project_id = override_project_id
         for port in ports:
             if project_id is None:
@@ -442,19 +434,19 @@ class ACIConfig:
             if host_id in hostgroup_config['hosts']:
                 return hostgroup_name
 
-    def get_hostgroup_by_host(self, host_id, segment_id=None, level=None):
+    def get_hostgroup_by_host(self, context, host_id, segment_id=None, level=None):
         hostgroup_name = self.get_hostgroup_name_by_host(host_id)
         if not hostgroup_name:
             return None, None
-        return hostgroup_name, self.get_hostgroup(hostgroup_name, segment_id, level)
+        return hostgroup_name, self.get_hostgroup(context, hostgroup_name, segment_id, level)
 
-    def get_physdoms_by_physnet(self, physnet, network_id, override_project_id=None):
+    def get_physdoms_by_physnet(self, context, physnet, network_id, override_project_id=None):
         for hg_name, hg in self.hostgroups.items():
             if hg['direct_mode']:
                 # we need mapped values for direct-mode hgs
-                hg = self.get_hostgroup(hg_name)
+                hg = self.get_hostgroup(context, hg_name)
             if hg['physical_network'] == physnet:
-                self.annotate_baremetal_info(hg, network_id, override_project_id)
+                self.annotate_baremetal_info(context, hg, network_id, override_project_id)
                 return hg['physical_domain']
         return []
 

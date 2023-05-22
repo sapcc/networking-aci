@@ -89,7 +89,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         host = common.get_host_from_profile(context.current.get('binding:profile'), context.host)
 
         LOG.debug("Using binding host %s for binding port %s", host, port['id'])
-        hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(host)
+        hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(context._plugin_context, host)
 
         if not hostgroup:
             LOG.warning("No aci config found for binding host %s while binding port %s", host, port['id'])
@@ -104,7 +104,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         # direct baremetal-on-aci needs to be annotated with physnet (and other stuff)
         if hostgroup['direct_mode']:
-            ACI_CONFIG.annotate_baremetal_info(hostgroup, context.network.current['id'],
+            ACI_CONFIG.annotate_baremetal_info(context._plugin_context, hostgroup, context.network.current['id'],
                                                override_project_id=port['project_id'])
 
         # hierarchical or direct?
@@ -157,7 +157,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                     LOG.error(msg)
                     raise n_exc.NeutronException(msg)
 
-            ACI_CONFIG.annotate_baremetal_info(hostgroup, network['id'], override_project_id=port['project_id'])
+            ACI_CONFIG.annotate_baremetal_info(context._plugin_context, hostgroup, network['id'],
+                                               override_project_id=port['project_id'])
             if aci_const.TRUNK_PROFILE in port['binding:profile']:
                 segmentation_id = port['binding:profile'][aci_const.TRUNK_PROFILE].get('segmentation_id', 1)
             else:
@@ -186,7 +187,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         LOG.info("Next segment to bind for port %s on %s: %s", port['id'], segment["id"], next_segment)
         if not hostgroup['direct_mode']:
             # for direct mode the rpc call will be made by the next level binding
-            ACI_CONFIG.clean_bindings(hostgroup, allocation.segment_id, level=level)
+            ACI_CONFIG.clean_bindings(context._plugin_context, hostgroup, allocation.segment_id, level=level)
             self.rpc_notifier.bind_port(context._plugin_context, port, hostgroup, segment, next_segment)
         context.continue_binding(segment["id"], [next_segment])
 
@@ -204,7 +205,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                 if not hostgroup['finalize_binding']:
                     # annotate baremetal resource name for baremetal group (if necessary)
                     network = context.network.current
-                    ACI_CONFIG.annotate_baremetal_info(hostgroup, network['id'], override_project_id=port['project_id'])
+                    ACI_CONFIG.annotate_baremetal_info(context._plugin_context, hostgroup, network['id'],
+                                                       override_project_id=port['project_id'])
 
                     if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and \
                             aci_const.TRUNK_PROFILE in port['binding:profile']:
@@ -345,7 +347,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
     # Port callbacks
     def create_port_precommit(self, context):
-        self._check_port_az_affinity(context.network.current, context.current)
+        self._check_port_az_affinity(context._plugin_context, context.network.current, context.current)
 
     def update_port_precommit(self, context):
         # only check AZ again if binding host changed
@@ -354,13 +356,13 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         curr_host = common.get_host_from_profile(context.current['binding:profile'],
                                                  context.current['binding:host_id'])
         if orig_host != curr_host:
-            curr_hostgroup_name, curr_hostgroup = ACI_CONFIG.get_hostgroup_by_host(curr_host)
+            curr_hostgroup_name, curr_hostgroup = ACI_CONFIG.get_hostgroup_by_host(context._plugin_context, curr_host)
             if curr_hostgroup_name is not None:
-                self._check_port_az_affinity(context.network.current, context.current)
+                self._check_port_az_affinity(context._plugin_context, context.network.current, context.current)
 
-    def _check_port_az_affinity(self, network, port):
+    def _check_port_az_affinity(self, context, network, port):
         host = common.get_host_from_profile(port['binding:profile'], port['binding:host_id'])
-        hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(host)
+        hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(context, host)
         if not hostgroup:
             return  # ignore unknown binding_hosts
 
@@ -391,8 +393,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             # binding host differs, find out if:
             # * old binding host is valid
             # * new binding host is either invalid or valid AND belongs to a diffrent hostgroup
-            orig_hostgroup_name, orig_hostgroup = ACI_CONFIG.get_hostgroup_by_host(orig_host)
-            curr_hostgroup_name, curr_hostgroup = ACI_CONFIG.get_hostgroup_by_host(curr_host)
+            orig_hostgroup_name, orig_hostgroup = ACI_CONFIG.get_hostgroup_by_host(context._plugin_context, orig_host)
+            curr_hostgroup_name, curr_hostgroup = ACI_CONFIG.get_hostgroup_by_host(context._plugin_context, curr_host)
 
             if orig_hostgroup and \
                     (curr_hostgroup is None or (curr_hostgroup and orig_hostgroup_name != curr_hostgroup_name)):
@@ -432,7 +434,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             return
 
         host = common.get_host_from_profile(port['binding:profile'], port['binding:host_id'])
-        _, hostgroup = ACI_CONFIG.get_hostgroup_by_host(host)
+        _, hostgroup = ACI_CONFIG.get_hostgroup_by_host(context, host)
         if not hostgroup:
             return
 
@@ -446,7 +448,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         # Call to ACI to delete port if the segment is released i.e.
         # port is the last for the network one on the host
         # Check if physical domain should be cleared
-        ACI_CONFIG.annotate_baremetal_info(hostgroup, network['id'], override_project_id=port['project_id'])
+        ACI_CONFIG.annotate_baremetal_info(context, hostgroup, network['id'], override_project_id=port['project_id'])
         clearable_physdoms = []
         if released:
             # physdoms will only be removed on segment removal
@@ -464,7 +466,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             # if this is a infra-mode binding make sure no VM port is bound before removing it
             # (this should never be the case)
             if hostgroup['hostgroup_mode'] == aci_const.MODE_INFRA:
-                parent_hostgroup = ACI_CONFIG.get_hostgroup(hostgroup['parent_hostgroup'])
+                parent_hostgroup = ACI_CONFIG.get_hostgroup(context, hostgroup['parent_hostgroup'])
                 if any(host in hosts_on_network for host in parent_hostgroup['hosts']):
                     LOG.error("Found parent group binding %s for hostgroup %s while removing "
                               "port %s from network %s - we should not bind parent-hosts and subgroups "
@@ -495,7 +497,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         for other_segment in common.get_segments(context, network_id):
             if other_segment['physical_network'] is None:
                 continue
-            other_physdoms = ACI_CONFIG.get_physdoms_by_physnet(other_segment['physical_network'], network_id,
+            other_physdoms = ACI_CONFIG.get_physdoms_by_physnet(context, other_segment['physical_network'], network_id,
                                                                 project_id)
             if not other_physdoms:
                 LOG.warning("No config found for segment %s physical network %s in network %s",

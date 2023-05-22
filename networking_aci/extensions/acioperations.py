@@ -113,7 +113,7 @@ class ConfigController(wsgi.Controller):
         else:
             hostgroups = {}
             for hg_name in ACI_CONFIG.hostgroups:
-                hostgroups[hg_name] = ACI_CONFIG.get_hostgroup(hg_name)
+                hostgroups[hg_name] = ACI_CONFIG.get_hostgroup(request.context, hg_name)
 
         return {
             'hostgroups': hostgroups,
@@ -128,7 +128,7 @@ class ConfigController(wsgi.Controller):
         if request.GET.get("raw", False):
             hostgroup = ACI_CONFIG.hostgroups.get(hostgroup_name)
         else:
-            hostgroup = ACI_CONFIG.get_hostgroup(hostgroup_name)
+            hostgroup = ACI_CONFIG.get_hostgroup(request.context, hostgroup_name)
 
         if not hostgroup:
             raise web_exc.HTTPNotFound('Hostgroup "{}" does not exist'.format(hostgroup_name))
@@ -164,7 +164,7 @@ class HostgroupModeController(wsgi.Controller):
             raise web_exc.HTTPBadRequest("{} is already in {} mode".format(hostgroup_name, new_mode))
 
         # check if there are still ports on this hostgroup
-        hg_config = ACI_CONFIG.get_hostgroup(hostgroup_name)
+        hg_config = ACI_CONFIG.get_hostgroup(request.context, hostgroup_name)
         if not hg_config:
             raise web_exc.HTTPBadRequest("Hostgroup {} has no config associated with it".format(hostgroup_name))
 
@@ -190,7 +190,7 @@ class HostgroupModeController(wsgi.Controller):
         if self.db.set_hostgroup_mode(request.context, hostgroup_name, new_mode):
             LOG.info("Hostgroup %s set to mode %s", hostgroup_name, new_mode)
 
-            hg_config = ACI_CONFIG.get_hostgroup(hostgroup_name)
+            hg_config = ACI_CONFIG.get_hostgroup(request.context, hostgroup_name)
             aci_objects_update_succeeded = False
             if hg_config['hostgroup_mode'] == aci_const.MODE_INFRA:
                 # on switch from baremetal --> infra: switching policy group of port selectors, etc.
