@@ -86,10 +86,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                                            encap=next_segment['segmentation_id'])
 
     @log_helpers.log_method_call
-    def delete_port_postcommit(self, port, host_config, physdoms_to_clear, clearable_bm_entities=None,
-                               reset_bindings_to_infra=False):
+    def delete_port(self, context, port, host_config, clearable_phys_doms, clearable_bm_entities=None,
+                    reset_bindings_to_infra=False):
         self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config, encap=1, delete=True,
-                                                           physdoms_to_clear=physdoms_to_clear)
+                                                           physdoms_to_clear=clearable_phys_doms)
 
         if reset_bindings_to_infra:
             # sync infra mode - hostgroup is in baremetal mode so we have to override some values
@@ -102,32 +102,32 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                 self.aci_manager.clean_baremetal_objects(bm_entity)
 
     @log_helpers.log_method_call
-    def create_network_postcommit(self, context, network, external):
+    def create_network(self, context, network, external=False):
         self.aci_manager.ensure_domain_and_epg(context, network['id'], external=external)
 
     @log_helpers.log_method_call
-    def delete_network_postcommit(self, network, **kwargs):
+    def delete_network(self, context, network):
         self.aci_manager.delete_domain_and_epg(network['id'])
 
     @log_helpers.log_method_call
-    def create_subnet_postcommit(self, subnet, external, address_scope_name):
+    def create_subnet(self, context, subnet, external, address_scope_name):
         self.aci_manager.create_subnet(subnet, external=external, address_scope_name=address_scope_name,)
 
     @log_helpers.log_method_call
-    def delete_subnet_postcommit(self, subnet, external, address_scope_name, last_on_network):
+    def delete_subnet(self, context, subnet, external, address_scope_name, last_on_network):
         self.aci_manager.delete_subnet(subnet, external=external, address_scope_name=address_scope_name,
                                        last_on_network=last_on_network)
 
     @log_helpers.log_method_call
-    def clean_baremetal_objects_agent(self, resource_name):
+    def clean_baremetal_objects(self, context, resource_name):
         self.aci_manager.clean_baremetal_objects(resource_name)
 
     @log_helpers.log_method_call
-    def sync_direct_mode_config_agent(self, host_config):
+    def sync_direct_mode_config(self, context, host_config):
         self.aci_manager.ensure_hostgroup_mode_config(host_config, source="via rpc api")
 
     @log_helpers.log_method_call
-    def sync_network_agent(self, context, network):
+    def sync_network(self, context, network):
         return self.aci_manager.sync_network(context, network)
 
     # End RPC callbacks

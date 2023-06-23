@@ -31,35 +31,33 @@ LOG = logging.getLogger(__name__)
 
 
 class ACIRpcAPI(object):
-    def bind_port(self, rpc_context, port, host_config, segment, next_segment):
+    def bind_port(self, context, port, host_config, segment, next_segment):
         self.bind_port_postcommit(port, host_config, segment, next_segment)
 
-    @log_helpers.log_method_call
-    def delete_port(self, rpc_context, port, host_config, clearable_phys_doms, clearable_bm_entities,
+    def delete_port(self, context, port, host_config, clearable_phys_doms, clearable_bm_entities,
                     reset_bindings_to_infra):
-        self.delete_port_postcommit(port, host_config, clearable_phys_doms, clearable_bm_entities,
-                                    reset_bindings_to_infra)
+        raise NotImplementedError
 
-    def create_network(self, rpc_context, network, external=False):
-        self.create_network_postcommit(rpc_context, network, external)
+    def create_network(self, context, network, external=False):
+        raise NotImplementedError
 
-    def delete_network(self, rpc_context, network):
-        self.delete_network_postcommit(network)
+    def delete_network(self, context, network):
+        raise NotImplementedError
 
-    def create_subnet(self, rpc_context, subnet, external, address_scope_name):
-        self.create_subnet_postcommit(subnet, external, address_scope_name)
+    def create_subnet(self, context, subnet, external, address_scope_name):
+        raise NotImplementedError
 
-    def delete_subnet(self, rpc_context, subnet, external, address_scope_name, last_on_network):
-        self.delete_subnet_postcommit(subnet, external, address_scope_name, last_on_network)
+    def delete_subnet(self, context, subnet, external, address_scope_name, last_on_network):
+        raise NotImplementedError
 
-    def clean_baremetal_objects(self, rpc_context, resource_name):
-        self.clean_baremetal_objects_agent(resource_name)
+    def clean_baremetal_objects(self, context, resource_name):
+        raise NotImplementedError
 
-    def sync_direct_mode_config(self, rpc_context, host_config):
-        self.sync_direct_mode_config_agent(host_config)
+    def sync_direct_mode_config(self, context, host_config):
+        raise NotImplementedError
 
-    def sync_network(self, rpc_context, network):
-        self.sync_network_agent(rpc_context, network)
+    def sync_network(self, context, network):
+        raise NotImplementedError
 
 
 class AgentRpcCallback(object):
