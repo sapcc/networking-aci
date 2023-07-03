@@ -53,11 +53,15 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.rpc_notifier = rpc_api.ACIRpcClientAPI()
         self.trunk_driver = ACITrunkDriver.create()
         self.vif_details = {
-            portbindings.VIF_DETAILS_CONNECTIVITY: portbindings.CONNECTIVITY_L2
+            portbindings.VIF_DETAILS_CONNECTIVITY: self.connectivity
         }
 
     def initialize(self):
         pass
+
+    @property
+    def connectivity(self):
+        return portbindings.CONNECTIVITY_L2
 
     @property
     def _plugin(self):
