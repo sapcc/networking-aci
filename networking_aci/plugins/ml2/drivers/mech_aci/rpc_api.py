@@ -59,6 +59,9 @@ class ACIRpcAPI(object):
     def sync_network(self, context, network):
         raise NotImplementedError
 
+    def sync_network_id(self, context, network_id):
+        raise NotImplementedError
+
 
 class AgentRpcCallback(object):
 
@@ -235,6 +238,9 @@ class ACIRpcClientAPI(object):
 
     def sync_network(self, context, network):
         self._fanout().cast(context, 'sync_network', network=network)
+
+    def sync_network_id(self, context, network_id):
+        self._fanout().cast(context, 'sync_network_id', network_id=network_id)
 
 
 class AgentRpcClientAPI(object):

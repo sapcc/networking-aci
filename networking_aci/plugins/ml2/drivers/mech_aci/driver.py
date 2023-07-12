@@ -472,10 +472,15 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             if hostgroup['hostgroup_mode'] == aci_const.MODE_INFRA:
                 parent_hostgroup = ACI_CONFIG.get_hostgroup(context, hostgroup['parent_hostgroup'])
                 if any(host in hosts_on_network for host in parent_hostgroup['hosts']):
-                    LOG.error("Found parent group binding %s for hostgroup %s while removing "
-                              "port %s from network %s - we should not bind parent-hosts and subgroups "
-                              "in the same network",
-                              parent_hostgroup['name'], hostgroup['name'], port['id'], network['id'])
+                    # parent group has still a binding, we might have set one of the VPCs to access mode
+                    # therefore we need to resync the binding. As this might interfere with other ports
+                    # joining/leaving the network we do a network sync here
+                    ACI_CONFIG.clean_bindings(context, parent_hostgroup, segment['id'], level=1)
+                    LOG.debug("Port %s in network %s is in hostgroup %s, parent hostgroup %s, which needs a resync, "
+                              "as this network has the parent hostgroup as member, but not the child anymore",
+                              port['id'], network['id'], hostgroup['name'], parent_hostgroup['name'])
+
+                    self.rpc_notifier.sync_network_id(context, network['id'])
                     return
 
         if hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
