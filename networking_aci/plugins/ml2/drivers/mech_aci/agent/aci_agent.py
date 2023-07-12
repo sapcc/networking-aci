@@ -130,6 +130,13 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
     def sync_network(self, context, network):
         return self.aci_manager.sync_network(context, network)
 
+    @log_helpers.log_method_call
+    def sync_network_id(self, context, network_id):
+        LOG.info("Grabbing data to sync network %s", network_id)
+        network = self.agent_rpc.get_network(context, network_id)
+        LOG.info("Data fetched, executing sync for network %s", network_id)
+        return self.aci_manager.sync_network(context, network)
+
     # End RPC callbacks
 
     # Start Agent mechanics
