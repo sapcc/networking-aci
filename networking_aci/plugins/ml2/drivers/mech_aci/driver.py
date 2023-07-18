@@ -252,7 +252,12 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
         address_scope_name = None
 
-        external = self._subnet_external(context)
+        network = context._plugin.get_network(context._plugin_context, context.current['network_id'])
+        external = bool(network.get('router:external'))
+        network_az = None
+        if network.get(az_def.AZ_HINTS):
+            network_az = network[az_def.AZ_HINTS][0]
+
         if external:
             subnetpool_id = context.current['subnetpool_id']
 
@@ -272,7 +277,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                 return
 
         self.rpc_notifier.create_subnet(context._plugin_context, context.current, external=external,
-                                        address_scope_name=address_scope_name)
+                                        address_scope_name=address_scope_name, network_az=network_az)
 
     def delete_subnet_postcommit(self, context):
         if not CONF.ml2_aci.handle_all_l3_gateways or \
@@ -288,11 +293,16 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             return
 
         address_scope_name = self.db.get_address_scope_name(context._plugin_context, subnetpool_id)
-        external = self._subnet_external(context)
+        network = context._plugin.get_network(context._plugin_context, network_id)
+        external = bool(network.get('router:external'))
+        network_az = None
+        if network.get(az_def.AZ_HINTS):
+            network_az = network[az_def.AZ_HINTS][0]
         subnets = context._plugin.get_subnets_by_network(context._plugin_context, network_id)
         last_on_network = len(subnets) == 0
         self.rpc_notifier.delete_subnet(context._plugin_context, context.current, external=external,
-                                        address_scope_name=address_scope_name, last_on_network=last_on_network)
+                                        address_scope_name=address_scope_name, network_az=network_az,
+                                        last_on_network=last_on_network)
 
     @registry.receives(aci_const.CC_FABRIC_TRANSIT, [events.AFTER_CREATE])
     def on_fabric_transit_created(self, resource, event, trigger, payload):
@@ -530,17 +540,6 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
     def _network_external(context):
         current = context.current
         network_id = current['id']
-        network = context._plugin.get_network(context._plugin_context, network_id)
-
-        if network.get('router:external'):
-            return True
-
-        return False
-
-    @staticmethod
-    def _subnet_external(context):
-        subnet = context.current
-        network_id = subnet['network_id']
         network = context._plugin.get_network(context._plugin_context, network_id)
 
         if network.get('router:external'):
