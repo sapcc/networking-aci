@@ -96,18 +96,21 @@ class CobraManager(object):
             move_detect = 1
             limit_ip_learn_subnets = 1
             ep_retention_policy = CONF.ml2_aci.ep_retention_policy_net_external
+            host_based_routing = 'yes' if CONF.ml2_aci.advertise_hostroutes else 'no'
         else:
             unicast_route = 0
             move_detect = 0
             limit_ip_learn_subnets = 0
             ep_retention_policy = CONF.ml2_aci.ep_retention_policy_net_internal
+            host_based_routing = 'no'
 
         bd_opts = {
             'arpFlood': 1,
             'unkMacUcastAct': 0,
             'unicastRoute': unicast_route,
             'epMoveDetectMode': move_detect,
-            'limitIpLearnToSubnets': limit_ip_learn_subnets
+            'limitIpLearnToSubnets': limit_ip_learn_subnets,
+            'hostBasedRouting': host_based_routing,
         }
 
         if CONF.ml2_aci.support_remote_mac_clear:
