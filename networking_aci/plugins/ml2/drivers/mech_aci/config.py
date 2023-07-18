@@ -114,6 +114,8 @@ aci_opts = [
     cfg.BoolOpt('handle_all_l3_gateways', default=True,
                 help='Configure l3 gateways for all external networks, except when tagged with '
                      'gateway-host::cc-fabric. If turned off, no gateways will be configured.'),
+    cfg.BoolOpt('advertise_hostroutes', default=True,
+                help='Advertise hostroutes by setting the host_base_routing flag for BDs of external networks'),
 ]
 
 hostgroup_opts = [
