@@ -44,10 +44,10 @@ class ACIRpcAPI(object):
     def delete_network(self, context, network):
         raise NotImplementedError
 
-    def create_subnet(self, context, subnet, external, address_scope_name):
+    def create_subnet(self, context, subnet, external, address_scope_name, network_az):
         raise NotImplementedError
 
-    def delete_subnet(self, context, subnet, external, address_scope_name, last_on_network):
+    def delete_subnet(self, context, subnet, external, address_scope_name, network_az, last_on_network):
         raise NotImplementedError
 
     def clean_baremetal_objects(self, context, resource_name):
@@ -222,13 +222,15 @@ class ACIRpcClientAPI(object):
     def delete_network(self, context, network):
         self._fanout().cast(context, 'delete_network', network=network)
 
-    def create_subnet(self, context, subnet, external=False, address_scope_name=None):
+    def create_subnet(self, context, subnet, external=False, address_scope_name=None, network_az=None):
         self._fanout().cast(context, 'create_subnet', subnet=subnet, external=external,
-                            address_scope_name=address_scope_name)
+                            address_scope_name=address_scope_name, network_az=network_az)
 
-    def delete_subnet(self, context, subnet, external=False, address_scope_name=None, last_on_network=None):
+    def delete_subnet(self, context, subnet, external=False, address_scope_name=None, network_az=None,
+                      last_on_network=None):
         self._fanout().cast(context, 'delete_subnet', subnet=subnet, external=external,
-                            address_scope_name=address_scope_name, last_on_network=last_on_network)
+                            address_scope_name=address_scope_name, network_az=network_az,
+                            last_on_network=last_on_network)
 
     def clean_baremetal_objects(self, context, resource_name):
         self._fanout().cast(context, 'clean_baremetal_objects', resource_name=resource_name)

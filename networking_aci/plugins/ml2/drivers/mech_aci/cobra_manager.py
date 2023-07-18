@@ -12,9 +12,10 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-from cobra.model import fv, fvns, infra, phys
+from cobra.model import fv, fvns, infra, phys, rtctrl
 import cobra.modelimpl.l3ext.out
 import netaddr
+from neutron_lib.api.definitions import availability_zone as az_def
 from oslo_config import cfg
 from oslo_log import log
 
@@ -33,6 +34,7 @@ VPCPORT_DN_PATH = 'topology/%s/protpaths-%s/pathep-[%s]'
 DPCPORT_DN_PATH = 'topology/%s/paths-%s/pathep-[%s]'
 NODE_DN_PATH = 'topology/%s/paths-%s/pathep-[Switch%s_%s-ports-%s_PolGrp]'
 PORT_SELECTOR_DN = 'uni/infra/accportprof-{}/hports-{}-typ-range'
+AZ_MATCH_RULE_DN = 'uni/tn-common/subj-PL-AZ-{az}-{vrf}'
 
 
 class CobraManager(object):
@@ -280,15 +282,15 @@ class CobraManager(object):
                       host_config['name'], source)
         self.apic.commit(port_sel_entities)
 
-    def create_subnet(self, subnet, external, address_scope_name):
-        self._configure_subnet(subnet, external=external, address_scope_name=address_scope_name,
+    def create_subnet(self, subnet, external, address_scope_name, network_az):
+        self._configure_subnet(subnet, external=external, address_scope_name=address_scope_name, network_az=network_az,
                                last_on_network=False, delete=False)
 
-    def delete_subnet(self, subnet, external, address_scope_name, last_on_network):
-        self._configure_subnet(subnet, external=external, address_scope_name=address_scope_name,
+    def delete_subnet(self, subnet, external, address_scope_name, network_az, last_on_network):
+        self._configure_subnet(subnet, external=external, address_scope_name=address_scope_name, network_az=network_az,
                                last_on_network=last_on_network, delete=True)
 
-    def ensure_subnet_created(self, network_id, address_scope_name, gateway):
+    def ensure_subnet_created(self, network_id, address_scope_name, gateway, network_az):
         tenant = self.get_tenant(network_id)
         scope_config = self._get_address_scope_config(address_scope_name)
         l3_outs = scope_config['l3_outs']
@@ -308,15 +310,34 @@ class CobraManager(object):
                 # subnet_out_profile = RsBDSubnetToProfile(subnet,l3_out,tnL3extOutName=l3_out)
                 # self.apic.commit(subnet_out_profile)
 
-        self.apic.commit([subnet] + subnet_outs)
+        match_rule_prefixes = []
+        if network_az and scope_config.get('vrf'):
+            az_suffix = network_az[-1]
+            match_rule_dn = AZ_MATCH_RULE_DN.format(az=az_suffix.upper(), vrf=scope_config['vrf'].upper())
+            prefix = self._get_network(gateway)
+            aci_prefix_obj = rtctrl.MatchRtDest(match_rule_dn, prefix=prefix)
+            match_rule_prefixes.append(aci_prefix_obj)
 
-    def ensure_subnet_deleted(self, network_id, gateway):
+        self.apic.commit([subnet] + subnet_outs + match_rule_prefixes)
+
+    def ensure_subnet_deleted(self, network_id, address_scope_name, gateway, network_az):
         tenant = self.get_tenant(network_id)
         bd = fv.BD(tenant, network_id)
         subnet = fv.Subnet(bd, gateway)
         subnet.delete()
+        to_delete = [subnet]
 
-        self.apic.commit(subnet)
+        if network_az:
+            scope_config = ACI_CONFIG.get_address_scope_by_name(address_scope_name)
+            if scope_config and scope_config.get('vrf'):
+                az_suffix = network_az[-1]
+                match_rule_dn = AZ_MATCH_RULE_DN.format(az=az_suffix.upper(), vrf=scope_config['vrf'].upper())
+                prefix = self._get_network(gateway)
+                aci_prefix_obj = rtctrl.MatchRtDest(match_rule_dn, prefix=prefix)
+                aci_prefix_obj.delete()
+                to_delete.append(aci_prefix_obj)
+
+        self.apic.commit(to_delete)
 
     def ensure_internal_network_configured(self, network_id, delete=False):
         tenant = self.get_tenant(network_id)
@@ -440,8 +461,13 @@ class CobraManager(object):
         self.ensure_domain_and_epg(context, network.get('id'), external=network.get('router:external'))
 
         if CONF.ml2_aci.handle_all_l3_gateways and aci_const.CC_FABRIC_L3_GATEWAY_TAG not in network['tags']:
+            network_az = None
+            if network.get(az_def.AZ_HINTS):
+                network_az = network[az_def.AZ_HINTS][0]
+
             for subnet in network.get('subnets'):
-                self.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'))
+                self.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'),
+                                   network_az)
 
         for binding in network.get('bindings'):
             if binding.get('host_config'):
@@ -525,7 +551,8 @@ class CobraManager(object):
 
     # Start Helper Methods
 
-    def _configure_subnet(self, subnet, external=False, address_scope_name=None, last_on_network=False, delete=False):
+    def _configure_subnet(self, subnet, external=False, address_scope_name=None, network_az=None,
+                          last_on_network=False, delete=False):
         network_id = subnet['network_id']
 
         if external:
@@ -534,16 +561,23 @@ class CobraManager(object):
 
             if delete:
                 # TODO handle multiple subnet case ?
-                self.ensure_subnet_deleted(network_id, gateway_ip)
+                self.ensure_subnet_deleted(network_id, address_scope_name, gateway_ip, network_az)
             else:
-                self.ensure_subnet_created(network_id, address_scope_name, gateway_ip)
+                self.ensure_subnet_created(network_id, address_scope_name, gateway_ip, network_az)
         else:
             self.ensure_internal_network_configured(network_id, delete)
 
-    def _get_gateway(self, subnet):
+    @staticmethod
+    def _get_gateway(subnet):
         cidr = netaddr.IPNetwork(subnet['cidr'])
         gateway_ip = '{}/{}'.format(subnet['gateway_ip'], str(cidr.prefixlen))
         return gateway_ip
+
+    @staticmethod
+    def _get_network(gateway):
+        cidr = netaddr.IPNetwork(gateway)
+        network_ip = '{}/{}'.format(cidr.network, str(cidr.prefixlen))
+        return network_ip
 
     def _get_address_scope_config(self, address_scope_name):
         scope_config = ACI_CONFIG.get_address_scope_by_name(address_scope_name)

@@ -110,13 +110,14 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.aci_manager.delete_domain_and_epg(network['id'])
 
     @log_helpers.log_method_call
-    def create_subnet(self, context, subnet, external, address_scope_name):
-        self.aci_manager.create_subnet(subnet, external=external, address_scope_name=address_scope_name,)
+    def create_subnet(self, context, subnet, external, address_scope_name, network_az):
+        self.aci_manager.create_subnet(subnet, external=external, address_scope_name=address_scope_name,
+                                       network_az=network_az)
 
     @log_helpers.log_method_call
-    def delete_subnet(self, context, subnet, external, address_scope_name, last_on_network):
+    def delete_subnet(self, context, subnet, external, address_scope_name, network_az, last_on_network):
         self.aci_manager.delete_subnet(subnet, external=external, address_scope_name=address_scope_name,
-                                       last_on_network=last_on_network)
+                                       network_az=network_az, last_on_network=last_on_network)
 
     @log_helpers.log_method_call
     def clean_baremetal_objects(self, context, resource_name):
