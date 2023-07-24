@@ -98,7 +98,7 @@ class ACITrunkDriver(base.DriverBase):
             # Event: https://github.com/sapcc/neutron/blob/e49485f2aa7dd48f57f2d94080a37c49306e87d4/neutron/services/trunk/plugin.py#L373
             return
 
-        vlan_map = ACI_CONFIG.db.get_trunk_vlan_usage_on_project(payload.contex, parent['project_id'])
+        vlan_map = ACI_CONFIG.db.get_trunk_vlan_usage_on_project(payload.context, parent['project_id'])
         bm_access_ranges = common.get_set_from_ranges(hostgroup['baremetal_access_vlan_ranges'])
         for subport in payload.metadata['subports']:
             if subport.segmentation_id in ACI_CONFIG.baremetal_reserved_vlans or \
