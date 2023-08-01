@@ -12,7 +12,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-from cobra.model import fv, fvns, infra, phys, rtctrl
+from cobra.model import fv, fvns, infra, ip, phys, rtctrl
 import cobra.modelimpl.l3ext.out
 import netaddr
 from neutron_lib.api.definitions import availability_zone as az_def
@@ -35,6 +35,7 @@ DPCPORT_DN_PATH = 'topology/%s/paths-%s/pathep-[%s]'
 NODE_DN_PATH = 'topology/%s/paths-%s/pathep-[Switch%s_%s-ports-%s_PolGrp]'
 PORT_SELECTOR_DN = 'uni/infra/accportprof-{}/hports-{}-typ-range'
 AZ_MATCH_RULE_DN = 'uni/tn-common/subj-PL-AZ-{az}-{vrf}'
+RSNODE_L3OUT_ATT_DN = 'uni/tn-{l3out_tenant}/out-{l3out_name}/lnodep-{l3out_name}/rsnodeL3OutAtt-[topology/{leaf_path}]'
 
 
 class CobraManager(object):
@@ -480,6 +481,76 @@ class CobraManager(object):
         for fixed_binding in network.get('fixed_bindings'):
             encap = fixed_binding.get('segment_id', None)
             self.ensure_static_bindings_configured(network.get('id'), fixed_binding, encap=encap)
+
+    def sync_nullroutes(self, data):
+        # 1. clean: find all lists that we manage and remove what should not be in them
+
+        to_delete = []
+        all_routes = self.apic.get_all_l3out_node_routes()
+        all_nullroute_l3outs = set(scope['nullroute_l3_out'] for scope in ACI_CONFIG.address_scopes.values()
+                                   if 'nullroute_l3_out' in scope)
+        for route in all_routes:
+            # dn example: uni/tn-common/out-cc-neutron01/lnodep-cc-neutron01/
+            #             rsnodeL3OutAtt-[topology/pod-1/node-2101]/rt-[193.175.216.0/24]
+            rns = list(route.dn.rns)
+            if len(rns) != 6:
+                LOG.error("%s does not have enough RNs", route.dn)
+                continue
+
+            # e.g. common/cc-neutron01
+            l3out_name = rns[2].namingValueList[0]
+            l3out_path = f"{rns[1].namingValueList[0]}/{l3out_name}"
+            lnodep = rns[3].namingValueList[0]
+            if l3out_path not in all_nullroute_l3outs or l3out_name != lnodep:
+                # l3out not managed by us
+                continue
+
+            # leaf topology/pod-1/node-2101
+            leaf_path = rns[4].namingValueList[0].split("/", 1)[1]
+
+            if l3out_path in data and leaf_path in data[l3out_path]:
+                if route.ip in data[l3out_path][leaf_path]:
+                    # route is still managed
+                    continue
+
+            LOG.info("CIDR %s is no longer part of leaf %s l3out %s, deleting it",
+                     route.ip, leaf_path, l3out_path)
+            route.delete()
+            to_delete.append(route)
+
+        if to_delete:
+            self.apic.commit(to_delete)
+
+        # 2. set: install all routes we need
+        # fetch all l3extRsNodeL3OutAtt to check if we can configure them
+        all_l3extrsnodel3outatt = set(str(x.dn) for x in self.apic.lookupByClass("l3extRsNodeL3OutAtt"))
+
+        missing_route_parents = set()
+        for l3out_path, leaves in data.items():
+            if "/" not in l3out_path:
+                LOG.error("Invalid l3out path, expected tenant/name, found %s", l3out_path)
+                continue
+            l3out_tenant, l3out_name = l3out_path.split("/", 2)
+
+            for leaf_path, cidrs in leaves.items():
+                route_parent_dn = RSNODE_L3OUT_ATT_DN.format(l3out_tenant=l3out_tenant, l3out_name=l3out_name,
+                                                             leaf_path=leaf_path)
+                if route_parent_dn not in all_l3extrsnodel3outatt:
+                    missing_route_parents.add(f"l3out {l3out_name} node {leaf_path}")
+                    continue
+
+                for cidr in cidrs:
+                    route = ip.RouteP(route_parent_dn, ip=cidr, pref=210)
+                    nh = ip.NexthopP(route, nhAddr="0.0.0.0/0", type="none")
+                    try:
+                        self.apic.commit([route, nh])
+                    except Exception as e:
+                        LOG.error("Could not commit nullroute for %s in %s on %s: %s %s",
+                                  cidr, l3out_path, leaf_path, e.__class__.__name__, e)
+
+        if missing_route_parents:
+            LOG.error("Nullroute sync skipped some nodes, as the ACI boilerplate config was missing: %s",
+                      ", ".join(missing_route_parents))
 
     def clean_subnets(self, network):
         network_id = network['id']

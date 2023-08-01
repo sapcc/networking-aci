@@ -188,6 +188,8 @@ address_scope_opts = [
                 help="Provided contracts for this scope. Contracts from the contracts option will be added as well."),
     cfg.StrOpt('vrf', required=True,
                help="VRF name of this address scope"),
+    cfg.StrOpt('nullroute_l3_out',
+               help="L3out on which to set nullroutes for summarized networks"),
 ]
 
 pc_policy_group_opts = [
