@@ -62,6 +62,9 @@ class ACIRpcAPI(object):
     def sync_network_id(self, context, network_id):
         raise NotImplementedError
 
+    def sync_nullroutes(self, context):
+        raise NotImplementedError
+
 
 class AgentRpcCallback(object):
 
@@ -192,6 +195,37 @@ class AgentRpcCallback(object):
                      "network may have been deleted concurrently."
                      .format(network_id))
 
+    def get_leaf_nullroutes(self, rpc_context):
+        def get_leaf_paths(binding):
+            tokens = binding.split("/")
+            if tokens[0] == 'vpc':
+                return [f"{tokens[1]}/node-{leaf_id}" for leaf_id in tokens[2].split("-")]
+            elif tokens[0] == 'dpc':
+                return [f"{tokens[1]}/node-{tokens[2]}"]
+            else:
+                return []
+
+        # create a dict of l3out names -> leaf path -> list of cidrs
+        leafdata = {}
+        subnets = self.db.get_external_subnet_nullroute_mapping(rpc_context)
+        for subnet in subnets.values():
+            leaf_paths = set()
+            scope = ACI_CONFIG.get_address_scope_by_name(subnet['address_scope_name'])
+            if not scope or 'nullroute_l3_out' not in scope:
+                continue
+            nr_l3out = scope['nullroute_l3_out']
+
+            for host in subnet['hosts']:
+                _, hostgroup = ACI_CONFIG.get_hostgroup_by_host(rpc_context, host)
+                if not hostgroup:
+                    continue
+                for binding in hostgroup['bindings']:
+                    leaf_paths.update(get_leaf_paths(binding))
+            for leaf_path in leaf_paths:
+                leafdata.setdefault(nr_l3out, {}).setdefault(leaf_path, []).append(subnet['parent_cidr'])
+
+        return leafdata
+
 
 class ACIRpcClientAPI(object):
     version = '1.0'
@@ -244,6 +278,9 @@ class ACIRpcClientAPI(object):
     def sync_network_id(self, context, network_id):
         self._fanout().cast(context, 'sync_network_id', network_id=network_id)
 
+    def sync_nullroutes(self, context):
+        self._fanout().cast(context, 'sync_nullroutes')
+
 
 class AgentRpcClientAPI(object):
     version = '1.0'
@@ -272,3 +309,6 @@ class AgentRpcClientAPI(object):
 
     def tag_network(self, context, network_id, tag):
         return self._fanout().call(context, 'tag_network', network_id=network_id, tag=tag)
+
+    def get_leaf_nullroutes(self, context):
+        return self._fanout().call(context, 'get_leaf_nullroutes')

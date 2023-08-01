@@ -11,13 +11,17 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import ipaddress
 import json
 
+from neutron_lib import constants as nl_const
 from neutron_lib.exceptions import address_scope as ext_address_scope
 from neutron.db import address_scope_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import external_net_db
 from neutron.db import models_v2
+from neutron.db.models import address_scope as ascope_models
+from neutron.db.models import external_net as extnet_models
 from neutron.db.models import segment as segment_models
 from neutron.db import segments_db as ml2_db
 from neutron.plugins.ml2 import models as ml2_models
@@ -251,6 +255,90 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             vlan_map.setdefault(entry[0], set()).add(entry[1])
 
         return vlan_map
+
+    def get_external_subnet_nullroute_mapping(self, context, level=1):
+        # 1. fetch all subnets where their CIDR doesn't completely overlap with a subnetpool prefix
+        #   * every external subnet which doesn't have a matching prefix gets
+        #   * we could filter here already for non-overlappings, but it shouldn't make much of a difference
+        #     performance-wise and is a bit more complicated. The query could look like this:
+        #     SELECT id, name, cidr, subnetpool_id FROM subnets s
+        #     INNER JOIN externalnetworks extnet ON s.network_id = extnet.network_id
+        #     WHERE s.subnetpool_id IS NOT NULL AND
+        #     (SELECT COUNT(*) FROM subnetpoolprefixes snp
+        #      WHERE subnetpool_id = s.subnetpool_id AND snp.cidr = s.cidr) = 0;
+        query = context.session.query(models_v2.Subnet.id, models_v2.Subnet.cidr,
+                                      models_v2.SubnetPool.id, ascope_models.AddressScope.name)
+        query = query.join(extnet_models.ExternalNetwork,
+                           models_v2.Subnet.network_id == extnet_models.ExternalNetwork.network_id)
+        query = query.join(models_v2.SubnetPool,
+                           models_v2.Subnet.subnetpool_id == models_v2.SubnetPool.id)
+        query = query.join(ascope_models.AddressScope,
+                           models_v2.SubnetPool.address_scope_id == ascope_models.AddressScope.id)
+        all_subnets = list(query.all())
+
+        # 2. fetch all subnetpools + their CIDRs and find out which is the longest matching prefix for each pool
+        subnetpool_ids = {s[2] for s in all_subnets}
+        query = context.session.query(models_v2.SubnetPool.id, models_v2.SubnetPoolPrefix.cidr)
+
+        query = query.join(models_v2.SubnetPoolPrefix,
+                           models_v2.SubnetPool.id == models_v2.SubnetPoolPrefix.subnetpool_id)
+
+        query = query.filter(models_v2.SubnetPool.id.in_(subnetpool_ids))
+        query = query.order_by(models_v2.SubnetPool.id, models_v2.SubnetPoolPrefix.cidr)
+        subnetpools = {}
+        for snp_id, cidr in query.all():
+            subnetpools.setdefault(snp_id, set()).add(cidr)
+
+        # 3. filter out all subnets where the subnet cidr is also a subnetpool prefix
+        subnets = {}
+        for subnet_id, cidr, subnetpool_id, ascope_name in all_subnets:
+            if subnetpool_id not in subnetpools:
+                continue
+            if cidr in subnetpools[subnetpool_id]:
+                continue
+
+            s_cidr = ipaddress.ip_network(cidr)
+            for snp_cidr in subnetpools[subnetpool_id]:
+                if s_cidr.subnet_of(ipaddress.ip_network(snp_cidr)):
+                    break
+            else:
+                LOG.warning("Subnet %s CIDR %s did not find any matching CIDR in subnetpool %s, options were %s",
+                            subnet_id, cidr, subnetpool_id, subnetpools[subnetpool_id])
+                continue
+            subnets[subnet_id] = {
+                'cidr': cidr,
+                'parent_cidr': snp_cidr,
+                'hosts': set(),
+                'address_scope_name': ascope_name,
+            }
+
+        # 4. find all binding hosts that are currently in that subnet
+        # SELECT pb.host, pb.profile FROM ml2_port_bindings pb
+        #   JOIN ml2_port_binding_levels pbl ON pb.port_id = pbl.port_id AND pbl.level = 1
+        #   JOIN ipallocations ia ON ia.port_id = pb.port_id WHERE ia.subnet_id IN (...);
+
+        query = context.session.query(ml2_models.PortBinding.host, ml2_models.PortBinding.profile,
+                                      models_v2.IPAllocation.subnet_id)
+        # PortBindingLevels are joined in to make sure the port is bound somewhere
+        query = query.join(ml2_models.PortBindingLevel,
+                           sa.and_(ml2_models.PortBinding.port_id == ml2_models.PortBindingLevel.port_id,
+                                   ml2_models.PortBinding.host == ml2_models.PortBindingLevel.host))
+        query = query.join(models_v2.IPAllocation,
+                           ml2_models.PortBinding.port_id == models_v2.IPAllocation.port_id)
+        query = query.filter(models_v2.IPAllocation.subnet_id.in_(list(subnets)))
+        if level is not None:
+            query = query.filter(ml2_models.PortBindingLevel.level == level)
+        # we only need to return subnets that are in use by a router as these are the
+        # subnets that are "really in use" - the rest can be ignored (or so say the requirements)
+        query = query.join(models_v2.Port,
+                           models_v2.Port.id == ml2_models.PortBinding.port_id)
+        query = query.filter(models_v2.Port.device_owner == nl_const.DEVICE_OWNER_ROUTER_GW)
+
+        for entry in query.all():
+            host = get_host_from_profile(entry.profile, entry.host)
+            subnets[entry.subnet_id]['hosts'].add(host)
+
+        return subnets
 
 
 def get_segments(context, network_id):

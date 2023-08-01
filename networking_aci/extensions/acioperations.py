@@ -95,6 +95,12 @@ class Acioperations(api_extensions.ExtensionDescriptor):
         networks_endpoint = extensions.ResourceExtension('aci-ml2/networks', res)
         endpoints.append(networks_endpoint)
 
+        # nullroutes endpoint
+        res = Resource(NullroutesController(plugin, db, rpc_notifier), faults.FAULT_MAP)
+        nullroutes_endpoint = extensions.ResourceExtension('aci-ml2/nullroutes', res,
+                                                           collection_actions=NullroutesController.COLLECTION_ACTIONS)
+        endpoints.append(nullroutes_endpoint)
+
         return endpoints
 
 
@@ -246,4 +252,35 @@ class NetworksController(wsgi.Controller):
         sync_data = self.rpc_api._get_network(request.context, network)
         self.rpc_notifier.sync_network(request.context, sync_data)
 
+        return {'sync_sent': True}
+
+
+class NullroutesController(wsgi.Controller):
+    COLLECTION_ACTIONS = {'sync': 'PUT', 'db_data': 'GET'}
+
+    def __init__(self, plugin, db, rpc_notifier):
+        super().__init__()
+        self.plugin = plugin
+        self.db = db
+        self.rpc_notifier = rpc_notifier
+        self.rpc_api = rpc_api.AgentRpcCallback(self.db)
+
+    @check_cloud_admin
+    def index(self, request, **kwargs):
+        return self.rpc_api.get_leaf_nullroutes(request.context)
+
+    @check_cloud_admin
+    def show(self, request, **kwargs):
+        raise web_exc.HTTPBadRequest("Showing details is not implemented")
+
+    @check_cloud_admin
+    def db_data(self, request, **kwargs):
+        data = self.db.get_external_subnet_nullroute_mapping(request.context)
+        for net in data.values():
+            net['hosts'] = list(net['hosts'])
+        return data
+
+    @check_cloud_admin
+    def sync(self, request, **kwargs):
+        self.rpc_notifier.sync_nullroutes(request.context)
         return {'sync_sent': True}

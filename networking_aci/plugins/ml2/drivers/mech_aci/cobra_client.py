@@ -214,3 +214,9 @@ class CobraClient(object):
             LOG.debug("Using existing ACI tenant {}".format(tenant_mo.dn))
 
         return tenant_mo
+
+    def get_match_rule_prefixes(self, match_rule_dn):
+        return self.query(match_rule_dn, queryTarget="children", classFilter="rtctrlMatchRtDest")
+
+    def get_all_l3out_node_routes(self):
+        return self.lookupByClass('ipRouteP')

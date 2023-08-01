@@ -161,6 +161,8 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         report_interval = 30  # self.conf.AGENT.report_interval
         heartbeat = loopingcall.FixedIntervalLoopingCall(self._report_state)
         heartbeat.start(interval=report_interval, stop_on_exception=False)
+        nullroute_syncloop = loopingcall.FixedIntervalLoopingCall(self._run_nullroute_sync)
+        nullroute_syncloop.start(interval=15 * 60, stop_on_exception=False)
 
     def _report_state(self):
         ctx = context.get_admin_context_without_session()
@@ -183,6 +185,17 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
             self.set_rpc_timeout(self.quitting_rpc_timeout)
 
     # End Agent mechanics
+
+    def _run_nullroute_sync(self):
+        ctx = context.get_admin_context_without_session()
+        self.sync_nullroutes(ctx)
+
+    def sync_nullroutes(self, context):
+        LOG.info("Starting nullroute sync")
+        data = self.agent_rpc.get_leaf_nullroutes(context)
+        LOG.debug("Data fetched for nullroute sync, executing sync")
+        self.aci_manager.sync_nullroutes(data)
+        LOG.info("Nullroute sync done")
 
     def loop_count_and_wait(self, start_time):
         # sleep till end of polling interval
