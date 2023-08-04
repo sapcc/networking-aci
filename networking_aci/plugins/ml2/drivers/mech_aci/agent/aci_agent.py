@@ -65,8 +65,6 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
         self.agent_id = 'aci-agent-%s' % CONF.host
 
-        self.setup_rpc()
-
         self.agent_state = {
             'binary': 'neutron-aci-agent',
             'host': CONF.host,
@@ -74,6 +72,8 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
             'configurations': {},
             'agent_type': aci_const.ACI_AGENT_TYPE,
             'start_flag': True}
+
+        self.setup_rpc()
 
         self.aci_manager = cobra_manager.CobraManager(self.agent_rpc, self.tenant_manager)
         self.connection.consume_in_threads()
