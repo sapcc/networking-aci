@@ -34,7 +34,8 @@ VPCPORT_DN_PATH = 'topology/%s/protpaths-%s/pathep-[%s]'
 DPCPORT_DN_PATH = 'topology/%s/paths-%s/pathep-[%s]'
 NODE_DN_PATH = 'topology/%s/paths-%s/pathep-[Switch%s_%s-ports-%s_PolGrp]'
 PORT_SELECTOR_DN = 'uni/infra/accportprof-{}/hports-{}-typ-range'
-AZ_MATCH_RULE_DN = 'uni/tn-common/subj-PL-AZ-{az}-{vrf}'
+SUBJ_P_DN = 'uni/tn-common/subj-PL-AZ-{az}-{vrf}'
+MATCH_RULE_DN = 'uni/tn-common/subj-PL-AZ-{az}-{vrf}/dest-[{prefix}]'
 RSNODE_L3OUT_ATT_DN = 'uni/tn-{l3out_tenant}/out-{l3out_name}/lnodep-{l3out_name}/rsnodeL3OutAtt-[topology/{leaf_path}]'
 
 
@@ -314,9 +315,9 @@ class CobraManager(object):
         match_rule_prefixes = []
         if network_az and scope_config.get('vrf'):
             az_suffix = network_az[-1]
-            match_rule_dn = AZ_MATCH_RULE_DN.format(az=az_suffix.upper(), vrf=scope_config['vrf'].upper())
+            match_rule_parent = SUBJ_P_DN.format(az=az_suffix.upper(), vrf=scope_config['vrf'].upper())
             prefix = self._get_network(gateway)
-            aci_prefix_obj = rtctrl.MatchRtDest(match_rule_dn, prefix=prefix)
+            aci_prefix_obj = rtctrl.MatchRtDest(match_rule_parent, ip=prefix)
             match_rule_prefixes.append(aci_prefix_obj)
 
         self.apic.commit([subnet] + subnet_outs + match_rule_prefixes)
@@ -332,9 +333,9 @@ class CobraManager(object):
             scope_config = ACI_CONFIG.get_address_scope_by_name(address_scope_name)
             if scope_config and scope_config.get('vrf'):
                 az_suffix = network_az[-1]
-                match_rule_dn = AZ_MATCH_RULE_DN.format(az=az_suffix.upper(), vrf=scope_config['vrf'].upper())
+                match_rule_parent = SUBJ_P_DN.format(az=az_suffix.upper(), vrf=scope_config['vrf'].upper())
                 prefix = self._get_network(gateway)
-                aci_prefix_obj = rtctrl.MatchRtDest(match_rule_dn, prefix=prefix)
+                aci_prefix_obj = rtctrl.MatchRtDest(match_rule_parent, ip=prefix)
                 aci_prefix_obj.delete()
                 to_delete.append(aci_prefix_obj)
 
@@ -481,6 +482,52 @@ class CobraManager(object):
         for fixed_binding in network.get('fixed_bindings'):
             encap = fixed_binding.get('segment_id', None)
             self.ensure_static_bindings_configured(network.get('id'), fixed_binding, encap=encap)
+
+    def sync_az_aware_subnet_routes(self, subnets):
+        az_vrfs = {}
+        matchrule_dns = []
+        for subnet in subnets:
+            az_suffix = subnet['az'][-1].upper()
+            az_vrf = (az_suffix, subnet['vrf'].upper())
+            if az_vrf not in az_vrfs:
+                az_vrfs[az_vrf] = []
+            az_vrfs[az_vrf].append(subnet['cidr'])
+            mr_dn = MATCH_RULE_DN.format(az=az_suffix, vrf=az_vrf[1], prefix=subnet['cidr'])
+            matchrule_dns.append(mr_dn)
+
+        all_vrfs = set(scope['vrf'].upper() for scope in ACI_CONFIG.address_scopes.values())
+        all_az_suffixes = set(az[-1].upper()
+                              for hg in ACI_CONFIG.hostgroups.values() for az in hg['availability_zones'])
+        all_managed_subj_p_dns = [SUBJ_P_DN.format(az=az, vrf=vrf) + "/"
+                                  for az in all_az_suffixes for vrf in all_vrfs]
+
+        # 1. clean: fetch data from aci
+        to_delete = []
+        for match_rule in self.apic.lookupByClass('rtctrlMatchRtDest'):
+            if str(match_rule.dn) in matchrule_dns:
+                # should be present on device
+                continue
+            if not any(str(match_rule.dn).startswith(managed_subj_p) for managed_subj_p in all_managed_subj_p_dns):
+                # only handle subj_p_s that we manage
+                continue
+            LOG.warning("Deleting %s, as it is no longer in database", match_rule.dn)
+            match_rule.delete()
+            to_delete.append(match_rule)
+        if to_delete:
+            self.apic.commit(to_delete)
+
+        # 2. set: make sure everything is set
+        aci_objs = []
+        for (az_suffix, vrf), cidrs in az_vrfs.items():
+            match_rule_parent_dn = SUBJ_P_DN.format(az=az_suffix, vrf=vrf)
+            for cidr in cidrs:
+                aci_prefix_obj = rtctrl.MatchRtDest(match_rule_parent_dn, ip=cidr)
+                aci_objs.append(aci_prefix_obj)
+        if aci_objs:
+            LOG.debug("Committing %s aci az aware subnet routes", len(aci_objs))
+            self.apic.commit(aci_objs)
+        else:
+            LOG.debug("No az aware subnet routes found in sync")
 
     def sync_nullroutes(self, data):
         # 1. clean: find all lists that we manage and remove what should not be in them

@@ -101,6 +101,12 @@ class Acioperations(api_extensions.ExtensionDescriptor):
                                                            collection_actions=NullroutesController.COLLECTION_ACTIONS)
         endpoints.append(nullroutes_endpoint)
 
+        # az_aware_subnet_routes endpoint
+        res = Resource(AZAwareSubnetRoutes(plugin, db, rpc_notifier), faults.FAULT_MAP)
+        az_a_sr_endpoint = extensions.ResourceExtension('aci-ml2/az_aware_subnet_routes', res,
+                                                        collection_actions=NullroutesController.COLLECTION_ACTIONS)
+        endpoints.append(az_a_sr_endpoint)
+
         return endpoints
 
 
@@ -283,4 +289,32 @@ class NullroutesController(wsgi.Controller):
     @check_cloud_admin
     def sync(self, request, **kwargs):
         self.rpc_notifier.sync_nullroutes(request.context)
+        return {'sync_sent': True}
+
+
+class AZAwareSubnetRoutes(wsgi.Controller):
+    COLLECTION_ACTIONS = {'sync': 'PUT', 'db_data': 'GET'}
+
+    def __init__(self, plugin, db, rpc_notifier):
+        super().__init__()
+        self.plugin = plugin
+        self.db = db
+        self.rpc_notifier = rpc_notifier
+        self.rpc_api = rpc_api.AgentRpcCallback(self.db)
+
+    @check_cloud_admin
+    def index(self, request, **kwargs):
+        return self.rpc_api.get_az_aware_subnet_routes(request.context)
+
+    @check_cloud_admin
+    def show(self, request, **kwargs):
+        raise web_exc.HTTPBadRequest("Showing details is not implemented")
+
+    @check_cloud_admin
+    def db_data(self, request, **kwargs):
+        return self.db.get_az_aware_external_subnets(request.context)
+
+    @check_cloud_admin
+    def sync(self, request, **kwargs):
+        self.rpc_notifier.sync_az_aware_subnet_routes(request.context)
         return {'sync_sent': True}

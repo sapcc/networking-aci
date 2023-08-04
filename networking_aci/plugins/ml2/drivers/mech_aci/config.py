@@ -116,6 +116,14 @@ aci_opts = [
                      'gateway-host::cc-fabric. If turned off, no gateways will be configured.'),
     cfg.BoolOpt('advertise_hostroutes', default=True,
                 help='Advertise hostroutes by setting the host_base_routing flag for BDs of external networks'),
+
+    cfg.IntOpt('non_epg_syncloop_interval', default=15 * 60,
+               help="Interval of the non-epg syncloop for syncing things that are not EPGs "
+                    "(e.g. az aware subnet routes or nullroutes)"),
+    cfg.BoolOpt('enable_nullroute_sync', default=True,
+                help="Enable nullroute sync"),
+    cfg.BoolOpt('enable_az_aware_subnet_routes_sync', default=True,
+                help="Enable AZ aware subnet routes sync"),
 ]
 
 hostgroup_opts = [

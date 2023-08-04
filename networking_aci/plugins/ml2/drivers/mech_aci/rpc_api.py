@@ -62,6 +62,9 @@ class ACIRpcAPI(object):
     def sync_network_id(self, context, network_id):
         raise NotImplementedError
 
+    def sync_az_aware_subnet_routes(self, context):
+        raise NotImplementedError
+
     def sync_nullroutes(self, context):
         raise NotImplementedError
 
@@ -195,6 +198,16 @@ class AgentRpcCallback(object):
                      "network may have been deleted concurrently."
                      .format(network_id))
 
+    def get_az_aware_subnet_routes(self, rpc_context):
+        subnets = []
+        for subnet in self.db.get_az_aware_external_subnets(rpc_context):
+            scope = ACI_CONFIG.get_address_scope_by_name(subnet['address_scope_name'])
+            if not scope or 'nullroute_l3_out' not in scope:
+                continue
+            subnet['vrf'] = scope['vrf']
+            subnets.append(subnet)
+        return subnets
+
     def get_leaf_nullroutes(self, rpc_context):
         def get_leaf_paths(binding):
             tokens = binding.split("/")
@@ -278,6 +291,9 @@ class ACIRpcClientAPI(object):
     def sync_network_id(self, context, network_id):
         self._fanout().cast(context, 'sync_network_id', network_id=network_id)
 
+    def sync_az_aware_subnet_routes(self, context):
+        self._fanout().cast(context, 'sync_az_aware_subnet_routes')
+
     def sync_nullroutes(self, context):
         self._fanout().cast(context, 'sync_nullroutes')
 
@@ -309,6 +325,9 @@ class AgentRpcClientAPI(object):
 
     def tag_network(self, context, network_id, tag):
         return self._fanout().call(context, 'tag_network', network_id=network_id, tag=tag)
+
+    def get_az_aware_subnet_routes(self, context):
+        return self._fanout().call(context, 'get_az_aware_subnet_routes')
 
     def get_leaf_nullroutes(self, context):
         return self._fanout().call(context, 'get_leaf_nullroutes')
