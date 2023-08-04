@@ -78,6 +78,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.aci_manager = cobra_manager.CobraManager(self.agent_rpc, self.tenant_manager)
         self.connection.consume_in_threads()
 
+        non_epg_syncloop = loopingcall.FixedIntervalLoopingCall(self._run_non_epg_syncloop)
+        non_epg_syncloop.start(interval=CONF.ml2_aci.non_epg_syncloop_interval,
+                               stop_on_exception=False)
+
     # Start RPC callbacks
 
     @log_helpers.log_method_call
@@ -161,8 +165,6 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         report_interval = 30  # self.conf.AGENT.report_interval
         heartbeat = loopingcall.FixedIntervalLoopingCall(self._report_state)
         heartbeat.start(interval=report_interval, stop_on_exception=False)
-        nullroute_syncloop = loopingcall.FixedIntervalLoopingCall(self._run_nullroute_sync)
-        nullroute_syncloop.start(interval=15 * 60, stop_on_exception=False)
 
     def _report_state(self):
         ctx = context.get_admin_context_without_session()
@@ -186,9 +188,34 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     # End Agent mechanics
 
-    def _run_nullroute_sync(self):
+    def _run_non_epg_syncloop(self):
         ctx = context.get_admin_context_without_session()
-        self.sync_nullroutes(ctx)
+        LOG.info("Starting periodic non-epg syncloop")
+        if CONF.ml2_aci.enable_az_aware_subnet_routes_sync:
+            try:
+                self.sync_az_aware_subnet_routes(ctx)
+            except Exception as e:
+                LOG.exception("Sync of AZ aware subnet routes failed: %s %s",
+                              e.__class__.__name__, e)
+        else:
+            LOG.info("AZ aware subnet routes syncloop is currently disabled")
+
+        if CONF.ml2_aci.enable_nullroute_sync:
+            try:
+                self.sync_nullroutes(ctx)
+            except Exception as e:
+                LOG.exception("Sync of nullroutes failed: %s %s",
+                              e.__class__.__name__, e)
+        else:
+            LOG.info("Nullroute syncloop is currently disabled")
+        LOG.info("Periodic non-epg syncloop done")
+
+    def sync_az_aware_subnet_routes(self, context):
+        LOG.info("Starting AZ aware subnet route sync")
+        subnets = self.agent_rpc.get_az_aware_subnet_routes(context)
+        LOG.debug("Data fetched for az aware subnet route sync")
+        self.aci_manager.sync_az_aware_subnet_routes(subnets)
+        LOG.info("AZ aware subnet route sync done")
 
     def sync_nullroutes(self, context):
         LOG.info("Starting nullroute sync")

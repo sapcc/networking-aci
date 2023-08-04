@@ -256,6 +256,31 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return vlan_map
 
+    def get_az_aware_external_subnets(self, context):
+        query = context.session.query(models_v2.Subnet.id, models_v2.Subnet.cidr,
+                                      models_v2.Network.availability_zone_hints, ascope_models.AddressScope.name)
+        query = query.join(models_v2.Network,
+                           models_v2.Network.id == models_v2.Subnet.network_id)
+        query = query.join(extnet_models.ExternalNetwork,
+                           models_v2.Network.id == extnet_models.ExternalNetwork.network_id)
+        query = query.join(models_v2.SubnetPool,
+                           models_v2.Subnet.subnetpool_id == models_v2.SubnetPool.id)
+        query = query.join(ascope_models.AddressScope,
+                           models_v2.SubnetPool.address_scope_id == ascope_models.AddressScope.id)
+        query = query.filter(models_v2.Network.availability_zone_hints != "[]")
+
+        subnets = []
+        for entry in query.all():
+            try:
+                azs = json.loads(entry.availability_zone_hints)
+            except json.JSONDecodeError:
+                continue
+            if len(azs) != 1:
+                continue
+            subnets.append({"subnet_id": entry.id, "cidr": entry.cidr, "az": azs[0], "address_scope_name": entry.name})
+
+        return subnets
+
     def get_external_subnet_nullroute_mapping(self, context, level=1):
         # 1. fetch all subnets where their CIDR doesn't completely overlap with a subnetpool prefix
         #   * every external subnet which doesn't have a matching prefix gets
