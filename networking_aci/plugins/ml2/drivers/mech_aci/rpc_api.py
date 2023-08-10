@@ -202,7 +202,7 @@ class AgentRpcCallback(object):
         subnets = []
         for subnet in self.db.get_az_aware_external_subnets(rpc_context):
             scope = ACI_CONFIG.get_address_scope_by_name(subnet['address_scope_name'])
-            if not scope or 'nullroute_l3_out' not in scope:
+            if not scope:
                 continue
             subnet['vrf'] = scope['vrf']
             subnets.append(subnet)
