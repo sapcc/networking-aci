@@ -273,7 +273,11 @@ class NullroutesController(wsgi.Controller):
 
     @check_cloud_admin
     def index(self, request, **kwargs):
-        return self.rpc_api.get_leaf_nullroutes(request.context)
+        data = self.rpc_api.get_leaf_nullroutes(request.context)
+        for l3out_data in data.values():
+            for leaf_path in l3out_data:
+                l3out_data[leaf_path] = list(l3out_data[leaf_path])
+        return data
 
     @check_cloud_admin
     def show(self, request, **kwargs):

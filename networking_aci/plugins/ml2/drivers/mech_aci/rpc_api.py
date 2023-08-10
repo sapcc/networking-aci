@@ -235,7 +235,7 @@ class AgentRpcCallback(object):
                 for binding in hostgroup['bindings']:
                     leaf_paths.update(get_leaf_paths(binding))
             for leaf_path in leaf_paths:
-                leafdata.setdefault(nr_l3out, {}).setdefault(leaf_path, []).append(subnet['parent_cidr'])
+                leafdata.setdefault(nr_l3out, {}).setdefault(leaf_path, set()).add(subnet['parent_cidr'])
 
         return leafdata
 
