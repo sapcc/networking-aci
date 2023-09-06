@@ -13,6 +13,7 @@
 #    under the License.
 import ipaddress
 import json
+import threading
 
 from neutron_lib import constants as nl_const
 from neutron_lib.exceptions import address_scope as ext_address_scope
@@ -364,6 +365,31 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             subnets[entry.subnet_id]['hosts'].add(host)
 
         return subnets
+
+
+class LockedDirtyCache:
+    def __init__(self):
+        self._cache = set()
+        self._lock = threading.Lock()
+
+    def clear(self):
+        with self._lock:
+            self._cache.clear()
+
+    def mark_dirty(self, item):
+        with self._lock:
+            self._cache.add(item)
+
+    def remove(self, network_id):
+        with self._lock:
+            try:
+                self._cache.remove(network_id)
+            except KeyError:
+                pass
+
+    def __contains__(self, item):
+        with self._lock:
+            return item in self._cache
 
 
 def get_segments(context, network_id):

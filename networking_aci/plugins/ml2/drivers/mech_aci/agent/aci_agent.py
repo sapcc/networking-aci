@@ -30,6 +30,7 @@ from stevedore import driver
 
 from networking_aci._i18n import _LI, _LE
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_manager
+from networking_aci.plugins.ml2.drivers.mech_aci.common import LockedDirtyCache
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
 
@@ -61,6 +62,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.iter_num = 0
         self.run_daemon_loop = True
         self.quitting_rpc_timeout = quitting_rpc_timeout
+        self._dirty_networks = LockedDirtyCache()
         self.catch_sigterm = False
 
         self.agent_id = 'aci-agent-%s' % CONF.host
@@ -86,12 +88,14 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     @log_helpers.log_method_call
     def bind_port_postcommit(self, port, host_config, segment, next_segment):
+        self._dirty_networks.mark_dirty(port['network_id'])
         self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config,
                                                            encap=next_segment['segmentation_id'])
 
     @log_helpers.log_method_call
     def delete_port(self, context, port, host_config, clearable_phys_doms, clearable_bm_entities=None,
                     reset_bindings_to_infra=False):
+        self._dirty_networks.mark_dirty(port['network_id'])
         self.aci_manager.ensure_static_bindings_configured(port['network_id'], host_config, encap=1, delete=True,
                                                            physdoms_to_clear=clearable_phys_doms)
 
@@ -107,19 +111,23 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     @log_helpers.log_method_call
     def create_network(self, context, network, external=False):
+        self._dirty_networks.mark_dirty(network['id'])
         self.aci_manager.ensure_domain_and_epg(context, network['id'], external=external)
 
     @log_helpers.log_method_call
     def delete_network(self, context, network):
+        self._dirty_networks.mark_dirty(network['id'])
         self.aci_manager.delete_domain_and_epg(network['id'])
 
     @log_helpers.log_method_call
     def create_subnet(self, context, subnet, external, address_scope_name, network_az):
+        self._dirty_networks.mark_dirty(subnet['network_id'])
         self.aci_manager.create_subnet(subnet, external=external, address_scope_name=address_scope_name,
                                        network_az=network_az)
 
     @log_helpers.log_method_call
     def delete_subnet(self, context, subnet, external, address_scope_name, network_az, last_on_network):
+        self._dirty_networks.mark_dirty(subnet['network_id'])
         self.aci_manager.delete_subnet(subnet, external=external, address_scope_name=address_scope_name,
                                        network_az=network_az, last_on_network=last_on_network)
 
@@ -133,10 +141,12 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     @log_helpers.log_method_call
     def sync_network(self, context, network):
+        self._dirty_networks.mark_dirty(network['id'])
         return self.aci_manager.sync_network(context, network)
 
     @log_helpers.log_method_call
     def sync_network_id(self, context, network_id):
+        self._dirty_networks.mark_dirty(network_id)
         LOG.info("Grabbing data to sync network %s", network_id)
         network = self.agent_rpc.get_network(context, network_id)
         LOG.info("Data fetched, executing sync for network %s", network_id)
@@ -293,6 +303,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                 LOG.info("Deleting EPG and BD for network %s", network_id)
                                 self.aci_manager.delete_domain_and_epg(network_id)
 
+                        self._dirty_networks.clear()
                         neutron_networks = self.agent_rpc.get_networks(ctx, limit=str(self.sync_batch_size),
                                                                        marker=self.sync_marker)
 
@@ -302,10 +313,23 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                         for network in neutron_networks:
                             try:
+                                network_id = network['id']
+                                if network_id in self._dirty_networks:
+                                    LOG.info("Network %s was modified while syncloop run, refetching data",
+                                             network_id)
+                                    self._dirty_networks.remove(network_id)
+                                    network = self.agent_rpc.get_network(ctx, network_id)
+                                    if not network:
+                                        LOG.error("Failed to refetch data from Neutron for network %s", network_id)
+                                        continue
+                                    if network_id in self._dirty_networks:
+                                        LOG.warning("Network %s was modified during refetching its data, "
+                                                    "syncing it anyway", network_id)
+
                                 self.aci_manager.sync_network(ctx, network)
                             except Exception:
                                 LOG.exception("Error while attempting to apply configuration to network %s",
-                                              network.get('id'))
+                                              network['id'])
 
                         LOG.info("Scan and fix %s networks in %s seconds", len(neutron_networks), time.time() - start)
                         self.sync_marker = neutron_networks[-1]['id']
