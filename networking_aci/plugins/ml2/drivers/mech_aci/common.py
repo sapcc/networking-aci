@@ -22,7 +22,10 @@ from neutron.db import db_base_plugin_v2
 from neutron.db import external_net_db
 from neutron.db import models_v2
 from neutron.db.models import address_scope as ascope_models
+from neutron.db.models import agent as agent_models
 from neutron.db.models import external_net as extnet_models
+from neutron.db.models import l3 as l3_models
+from neutron.db.models import l3agent as l3agent_models
 from neutron.db.models import segment as segment_models
 from neutron.db import segments_db as ml2_db
 from neutron.plugins.ml2 import models as ml2_models
@@ -363,6 +366,28 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         for entry in query.all():
             host = get_host_from_profile(entry.profile, entry.host)
             subnets[entry.subnet_id]['hosts'].add(host)
+
+        # 5. find all floating ips that are in these subnets and bound to a floating port
+        #  SELECT DISTINCT a.host, ipa.subnet_id
+        #  FROM floatingips fips
+        #  INNER JOIN ipallocations ipa ON ipa.port_id = fips.floating_port_id
+        #  INNER JOIN routerl3agentbindings rabs ON rabs.router_id = fips.router_id
+        #  INNER JOIN agents a ON a.id = rabs.l3_agent_id
+        #  WHERE fips.status = "ACTIVE"
+        #          AND ipa.subnet_id IN (...);
+
+        query = context.session.query(agent_models.Agent.host, models_v2.IPAllocation.subnet_id)
+        query = query.join(l3_models.FloatingIP,
+                           l3_models.FloatingIP.floating_port_id == models_v2.IPAllocation.port_id)
+        query = query.join(l3agent_models.RouterL3AgentBinding,
+                           l3_models.FloatingIP.router_id == l3agent_models.RouterL3AgentBinding.router_id)
+        query = query.filter(l3agent_models.RouterL3AgentBinding.l3_agent_id == agent_models.Agent.id)
+        query = query.filter(l3_models.FloatingIP.status == nl_const.FLOATINGIP_STATUS_ACTIVE)
+        query = query.filter(models_v2.IPAllocation.subnet_id.in_(list(subnets)))
+        query = query.distinct()
+
+        for entry in query.all():
+            subnets[entry.subnet_id]['hosts'].add(entry.host)
 
         return subnets
 
