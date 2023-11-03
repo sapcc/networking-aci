@@ -180,6 +180,10 @@ class HostgroupModeController(wsgi.Controller):
         if not hg_config:
             raise web_exc.HTTPBadRequest("Hostgroup {} has no config associated with it".format(hostgroup_name))
 
+        if not hg_config.get('port_selectors'):
+            raise web_exc.HTTPBadRequest(f"Hostgroup {hostgroup_name} has no port selectors, "
+                                         "therefore hostgroup mode cannot be switched")
+
         if curr_mode == aci_const.MODE_BAREMETAL:
             # for baremetal switchover we need to check all baremetal segments for active portbindings
             physnet_to_check = "{}%".format(ACI_CONFIG.baremetal_resource_prefix)
