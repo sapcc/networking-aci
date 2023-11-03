@@ -270,6 +270,10 @@ class CobraManager(object):
         self.apic.commit([aep, physdom, vlan_pool, pc_profile])
 
     def ensure_hostgroup_mode_config(self, host_config, source=""):
+        if not host_config.get('port_selectors'):
+            LOG.info("No port selectors configured for hostgroup %s %s, skipping hostgroup mode configuration",
+                     host_config['name'], source)
+            return
         if host_config['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
             if not self.ensure_baremetal_entities(host_config['pc_policy_group'],
                                                   host_config['baremetal_resource_name'],
@@ -282,6 +286,7 @@ class CobraManager(object):
             LOG.error("No port selector entity configuration could be generated for hostgroup %s %s"
                       " - are there configuration entities missing?",
                       host_config['name'], source)
+            return
         self.apic.commit(port_sel_entities)
 
     def create_subnet(self, subnet, external, address_scope_name, network_az):
