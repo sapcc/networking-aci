@@ -606,6 +606,10 @@ class CobraManager(object):
 
     def clean_subnets(self, network):
         network_id = network['id']
+        network_az = None
+        if network.get(az_def.AZ_HINTS):
+            network_az = network[az_def.AZ_HINTS][0]
+
         bd = self.get_bd(network_id)
         if bd:
             neutron_subnets = []
@@ -616,7 +620,8 @@ class CobraManager(object):
             for subnet in bd.subnet:
                 if subnet.ip not in neutron_subnets:
                     LOG.warning("Cleaning subnet %s on BD %s", subnet.ip, network_id)
-                    self.ensure_subnet_deleted(network_id, subnet.ip)
+                    self.ensure_subnet_deleted(network_id, neutron_subnet.get('address_scope_name'), subnet.ip,
+                                               network_az)
 
     def clean_physdoms(self, network):
         network_id = network['id']
