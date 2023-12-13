@@ -103,7 +103,7 @@ class CobraClient(object):
         LOG.info(hosts)
 
         protocol = 'https' if ssl else 'http'
-        self.api_base = collections.deque(['%s://%s/api' % (protocol, host) for host in hosts])
+        self.api_base = collections.deque(['%s://%s' % (protocol, host) for host in hosts])
         self.verify = verify
         self.timeout = 90
         self.user = user
