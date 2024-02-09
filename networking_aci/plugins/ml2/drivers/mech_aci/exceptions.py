@@ -79,3 +79,8 @@ class HostgroupNetworkAZAffinityError(exceptions.BadRequest):
 class TransitBindingProhibited(exceptions.BadRequest):
     """Raised when a user tries to bind a transit"""
     message = ("Binding transit hostgroups is prohibited (port %(port_id)s host %(host)s")
+
+
+class SubnetSubnetPoolAZAffinityError(exceptions.BadRequest):
+    message = ("The subnet's network %(network_id)s has AZ hint %(net_az_hint)s, "
+               "the subnet's subnetpool %(subnetpool_id)s has AZ %(subnetpool_az)s set, which do not match")

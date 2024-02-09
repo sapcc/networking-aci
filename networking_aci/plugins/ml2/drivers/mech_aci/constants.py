@@ -26,4 +26,6 @@ TRUNK_PROFILE = 'aci_trunk'
 CC_FABRIC_TRANSIT = 'cc-fabric-transit'  # needs to be aligned with networking-ccloud
 CC_FABRIC_NET_GW = 'cc-fabric-network-gateway'
 
+AZ_TAG_PREFIX = 'availability-zone::'
+
 CC_FABRIC_L3_GATEWAY_TAG = 'gateway-host::cc-fabric'

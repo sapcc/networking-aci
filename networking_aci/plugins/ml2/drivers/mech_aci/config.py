@@ -124,6 +124,9 @@ aci_opts = [
                 help="Enable nullroute sync"),
     cfg.BoolOpt('enable_az_aware_subnet_routes_sync', default=True,
                 help="Enable AZ aware subnet routes sync"),
+    cfg.BoolOpt("subnet_subnetpool_az_check_enabled", default=True,
+                help="Check if a subnet's network az hint matches the subnetpool's az hint (tag) on "
+                     "creation of an external subnet"),
 ]
 
 hostgroup_opts = [
