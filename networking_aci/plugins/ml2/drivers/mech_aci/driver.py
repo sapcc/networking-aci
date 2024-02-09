@@ -439,6 +439,49 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.cleanup_segment_if_needed(context._plugin_context, context.current, context.network.current,
                                        context.binding_levels, context.bottom_bound_segment)
 
+    def create_subnet_precommit(self, context):
+        """Allocate resources for a new subnet.
+
+        :param context: SubnetContext instance describing the new
+            subnet.
+
+        Create a new subnet, allocating resources as necessary in the
+        database. Called inside transaction context on session. Call
+        cannot block.  Raising an exception will result in a rollback
+        of the current transaction.
+        """
+        self._check_subnet_and_subnetpool_az_match(context)
+
+    def _check_subnet_and_subnetpool_az_match(self, context):
+        if not CONF.ml2_aci.subnet_subnetpool_az_check_enabled:
+            return
+
+        # check if a subnet's subnetpool and a subnet's network are in the same AZ
+        # network needs to be external, subnet needs to have a subnetpool
+        snp_id = context.current['subnetpool_id']
+        net = context.network.current
+        if snp_id is None or not net[extnet_def.EXTERNAL]:
+            return
+
+        # network az hint must match subnetpool az tag
+        net_az_hints = net[az_def.AZ_HINTS]
+        net_az_hint = net_az_hints[0] if net_az_hints else None
+
+        snp_details = self.db.get_subnetpool_details(context._plugin_context,
+                                                     [context.current['subnetpool_id']])
+
+        # if the subnetpool has no address scope we ignore it
+        if snp_id not in snp_details:
+            return
+
+        snp_az = snp_details[snp_id]['az']
+
+        # net and snp az need to match. they need to either be None or an AZ
+        if net_az_hint != snp_az:
+            raise aci_exc.SubnetSubnetPoolAZAffinityError(network_id=net['id'], net_az_hint=net_az_hint,
+                                                         subnetpool_id=context.current['subnetpool_id'],
+                                                         subnetpool_az=snp_az)
+
     def cleanup_segment_if_needed(self, context, port, network, binding_levels, segment):
         if not segment:
             return

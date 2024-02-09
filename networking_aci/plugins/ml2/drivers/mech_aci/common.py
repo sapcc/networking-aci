@@ -27,6 +27,7 @@ from neutron.db.models import external_net as extnet_models
 from neutron.db.models import l3 as l3_models
 from neutron.db.models import l3agent as l3agent_models
 from neutron.db.models import segment as segment_models
+from neutron.db.models import tag as tag_models
 from neutron.db import segments_db as ml2_db
 from neutron.plugins.ml2 import models as ml2_models
 import neutron.services.trunk.models as trunk_models
@@ -390,6 +391,47 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             subnets[entry.subnet_id]['hosts'].add(entry.host)
 
         return subnets
+
+    def get_subnetpool_details(self, context, subnetpool_ids):
+        # get az from tags
+        fields = [models_v2.SubnetPool.id, tag_models.Tag.tag]
+        query = context.session.query(*fields)
+        query = query.join(tag_models.Tag,
+                           models_v2.SubnetPool.standard_attr_id == tag_models.Tag.standard_attr_id)
+        query = query.filter(models_v2.SubnetPool.id.in_(subnetpool_ids))
+        query = query.filter(tag_models.Tag.tag.like(f'{aci_const.AZ_TAG_PREFIX}%'))
+
+        snp_az = {}
+        for snp_id, tag in query.all():
+            snp_az[snp_id] = tag[len(aci_const.AZ_TAG_PREFIX):]
+
+        # get the subnet pools
+        fields = [
+            models_v2.SubnetPool.id, models_v2.SubnetPoolPrefix.cidr,
+            ascope_models.AddressScope.name,
+        ]
+        query = context.session.query(*fields)
+
+        query = query.join(models_v2.SubnetPoolPrefix,
+                           models_v2.SubnetPool.id == models_v2.SubnetPoolPrefix.subnetpool_id)
+        query = query.join(ascope_models.AddressScope,
+                           models_v2.SubnetPool.address_scope_id == ascope_models.AddressScope.id)
+
+        query = query.filter(models_v2.SubnetPool.id.in_(subnetpool_ids))
+        query = query.order_by(models_v2.SubnetPool.id, models_v2.SubnetPoolPrefix.cidr)
+
+        # sort pools by address scope
+        result = {}
+        for snp_id, cidr, ascope_name in query.all():
+            if snp_id not in result:
+                result[snp_id] = {
+                    "cidrs": [],
+                    "az": snp_az.get(snp_id),
+                    "address_scope": ascope_name,
+                }
+            result[snp_id]['cidrs'].append(cidr)
+
+        return result
 
 
 class LockedDirtyCache:
