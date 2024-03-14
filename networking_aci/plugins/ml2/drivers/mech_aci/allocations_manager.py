@@ -13,7 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 import random
+import time
 
+from neutron_lib import context
 from neutron_lib.db import api as db_api
 from neutron.db.models import segment as ml2_models
 from neutron.plugins.ml2 import models
@@ -347,71 +349,74 @@ class AllocationsManager(object):
     @db_api.retry_db_errors
     def _sync_allocations(self):
         LOG.info("Preparing ACI Allocations table")
+        start_time = time.time()
         level = 1  # Currently only supporting one level in hierarchy
+        segment_type = 'vlan'
 
-        # TODO need to survive if the DB is not ready or migrations aren\t run
-        # TODO add a retry loop
-        session = db_api.get_writer_session()
-        with session.begin(subtransactions=True):
-            allocations = dict()
-            allocs = (session.query(AllocationsModel).with_for_update())
+        config_hg_names = list(ACI_CONFIG.hostgroups)
+        ctx = context.get_admin_context()
+        with db_api.CONTEXT_WRITER.using(ctx) as session:
+            # fetch allocations from db
+            db_allocs = session.query(AllocationsModel.host, AllocationsModel.network_id,
+                                      AllocationsModel.segmentation_id)
+            db_allocs = db_allocs.filter_by(level=level, segment_type=segment_type).with_for_update()
+            db_allocs = db_allocs.all()
 
-            for alloc in allocs:
-                alloc_key = self._allocation_key(alloc.host, alloc.level, alloc.segment_type)
-                if alloc_key not in allocations:
-                    allocations[alloc_key] = set()
-                allocations[alloc_key].add(alloc)
+            # sort allocations into data structures
+            LOG.debug("Processing allocations")
+            allocations = {}  # vlan ids grouped by hostgroup/physnet name
+            no_net_allocations = {}  # vland ids grouped by hostgroup/physnet that don't have a network assigned
+            hosts_to_delete = set()  # orphaned hosts with deletable allocs (no network_id assigned)
+            for n, db_alloc in enumerate(db_allocs):
+                if db_alloc.host not in allocations:
+                    if db_alloc.host not in config_hg_names:
+                        if db_alloc.network_id is None:
+                            # at least one allocation with this host can be deleted
+                            hosts_to_delete.add(db_alloc.host)
+                        continue
+                    allocations[db_alloc.host] = set()
+                    no_net_allocations[db_alloc.host] = set()
+                allocations[db_alloc.host].add(db_alloc.segmentation_id)
+                if db_alloc.network_id is None:
+                    no_net_allocations[db_alloc.host].add(db_alloc.segmentation_id)
 
-            # process segment ranges for each configured hostgroup
-            for hostgroup, hostgroup_config in ACI_CONFIG.hostgroups.items():
-                if hostgroup_config['direct_mode']:
+            # sync existing hostgroups (remove out-of-range allocs, add new allocs)
+            LOG.debug("Processing hostgroups")
+            for hg_name, hg_config in ACI_CONFIG.hostgroups.items():
+                if hg_config['direct_mode']:
                     continue
-                self._process_host_or_hostgroup(session, hostgroup, hostgroup_config, allocations, level)
 
-        # remove from table unallocated vlans for any unconfigured
-        # physical networks
-        for allocs in allocations.values():
-            for alloc in allocs:
-                if not alloc.network_id:
-                    LOG.debug("Removing segment %(seg_id)s on "
-                              "host/hostgroup"
-                              "%(host)s level %(level)s type %(segment_type)s from pool",
-                              {'seg_id': alloc.segmentation_id,
-                               'host': alloc.host,
-                               'level': alloc.level,
-                               'segment_type': alloc.segment_type})
-                    session.delete(alloc)
-        LOG.info("ACI allocations synced")
+                hg_vlans = self._segmentation_ids(hg_config)
+                if hg_name in allocations:
+                    # delete extra allocs
+                    out_of_range_ids = no_net_allocations[hg_name] - hg_vlans
+                    if out_of_range_ids:
+                        LOG.debug("Deleting %s out-of-range allocations with no assigned network for hostgroup %s",
+                                  len(out_of_range_ids), hg_name)
+                        # delete all extra allocations that don't have a network_id referenced
+                        del_q = session.query(AllocationsModel)
+                        del_q = del_q.filter_by(level=level, segment_type=segment_type, host=hg_name, network_id=None)
+                        del_q = del_q.filter(AllocationsModel.segmentation_id.in_(out_of_range_ids))
+                        del_q.delete()
 
-    def _process_host_or_hostgroup(self, session, host, host_config, allocations, level):
-        segment_type = host_config['segment_type']
-        segmentation_ids = self._segmentation_ids(host_config)
-        alloc_key = self._allocation_key(host, level, segment_type)
-        if alloc_key in allocations:
-            for alloc in allocations[alloc_key]:
-                try:
-                    # see if segment is allocatable
-                    LOG.info("Check if allocatable")
-                    LOG.info(alloc.segmentation_id)
-                    segmentation_ids.remove(alloc.segmentation_id)
-                except KeyError:
-                    # it's not allocatable, so check if its allocated
-                    if not alloc.network_id:
-                        # it's not, so remove it from table
-                        LOG.debug("Removing segment %(seg_id)s on "
-                                  "host/hostgroup "
-                                  "%(host)s level %(level)s type %(segment_type)s from pool",
-                                  {'seg_id': alloc.segmentation_id,
-                                   'host': host,
-                                   'level': level,
-                                   'segment_type': segment_type})
-                        session.delete(alloc)
-            del allocations[alloc_key]
+                missing_ids = hg_vlans - allocations.get(hg_name, set())
+                if missing_ids:
+                    LOG.debug("Adding %s allocations for hostgroup %s", len(missing_ids), hg_name)
+                    for seg_id in missing_ids:
+                        alloc = AllocationsModel(host=hg_name, level=level, segment_type=segment_type,
+                                                 segmentation_id=seg_id, network_id=None)
+                        session.add(alloc)
 
-        for segmentation_id in sorted(segmentation_ids):
-            alloc = AllocationsModel(host=host, level=level, segment_type=segment_type, segmentation_id=segmentation_id,
-                                     network_id=None)
-            session.add(alloc)
+            # remove allocs on orphaned hostgroups that don't have a network_id assigned
+            if hosts_to_delete:
+                LOG.debug("Deleting old allocations without assigned networks for orphaned hosts: %s",
+                          ", ".join(hosts_to_delete))
+                del_q = session.query(AllocationsModel)
+                del_q = del_q.filter_by(level=level, segment_type=segment_type, network_id=None)
+                del_q = del_q.filter(AllocationsModel.host.in_(hosts_to_delete))
+                del_q.delete()
+
+            LOG.info("ACI allocations synced in %.2fs", time.time() - start_time)
 
     def _sync_hostgroup_modes(self):
         LOG.info("Preparing hostgroup modes sync")
