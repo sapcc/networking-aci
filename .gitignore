@@ -4,3 +4,4 @@ __pycache__
 .tox/
 networking_aci.egg-info/
 .testrepository/
+.stestr/
