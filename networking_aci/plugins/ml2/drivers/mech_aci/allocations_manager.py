@@ -12,12 +12,14 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import os
 import random
 
 from neutron_lib import context
 from neutron_lib.db import api as db_api
 from neutron.db.models import segment as ml2_models
 from neutron.plugins.ml2 import models
+from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_db import exception as db_exc
 from oslo_log import log
@@ -42,7 +44,29 @@ CONF = cfg.CONF
 class AllocationsManager(object):
     def __init__(self, db):
         self.db = db
+        self._sync_db_guarded()
 
+    def initialize(self):
+        self._sync_db_guarded()
+        LOG.info(_LI("AllocationsManager initialization complete"))
+
+    def _sync_db_guarded(self):
+        if not CONF.sync_allocations_done_file_path:
+            # sync db unconditionally
+            self._sync_db()
+            return
+
+        with lockutils.external_lock("sync-allocations-guard", lock_file_prefix="networking-aci"):
+            try:
+                synced_by = open(CONF.sync_allocations_done_file_path, "r").read()
+                LOG.info("Not syncing in this thread, already synced by PID %s", synced_by)
+            except FileNotFoundError:
+                self._sync_db()
+                with open(CONF.sync_allocations_done_file_path, "w") as f:
+                    f.write(str(os.getpid()))
+                LOG.info("Successfully synced db")
+
+    def _sync_db(self):
         if CONF.ml2_aci.sync_allocations:
             try:
                 self._sync_allocations()
@@ -50,15 +74,6 @@ class AllocationsManager(object):
                 LOG.exception("__init__ sync alloc")
                 raise
         self._sync_hostgroup_modes()
-
-    def initialize(self):
-        try:
-            self._sync_allocations()
-        except Exception:
-            LOG.exception("initialize sync alloc")
-            raise
-        self._sync_hostgroup_modes()
-        LOG.info(_LI("AllocationsManager initialization complete"))
 
     def network_type_not_supported(self, network, host_id, level, segment_type, segment_physnet):
         LOG.error("Network type " + network["provider:network_type"] + " is not supported in the ACI driver")

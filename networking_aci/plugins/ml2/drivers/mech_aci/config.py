@@ -81,6 +81,8 @@ aci_opts = [
     cfg.BoolOpt('sync_allocations',
                 default=True,
                 help="Sync allocations on startup"),
+    cfg.BoolOpt('sync_allocations_done_file_path',
+                help="File to touch once one process on the system has synced the allocations table"),
     cfg.StrOpt('ep_retention_policy_net_internal',
                default=None,
                help="Name of the endpoint retention policy to use for internal networks. "

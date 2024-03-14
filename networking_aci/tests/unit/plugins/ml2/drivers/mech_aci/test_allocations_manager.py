@@ -12,13 +12,15 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import os
+from pathlib import Path
+import tempfile
 from unittest import mock
 
 from neutron_lib import context
 from neutron_lib.db import api as db_api
-
 from neutron.tests.unit.db.test_db_base_plugin_v2 import NeutronDbPluginV2TestCase
-
+from oslo_config import cfg
 
 from networking_aci.db.models import AllocationsModel
 from networking_aci.plugins.ml2.drivers.mech_aci.allocations_manager import AllocationsManager
@@ -97,3 +99,31 @@ class TestAllocationsManager(NeutronDbPluginV2TestCase):
             db_result = [(a.host, a.segmentation_id, a.network_id) for a in sess.query(AllocationsModel).all()]
 
         self.assertEqual(sorted(expected_result), sorted(db_result))
+
+    def test_sync_allocations_locking(self):
+        db = common.DBPlugin()
+
+        with mock.patch.object(AllocationsManager, '_sync_db') as sync_db_mock:
+            AllocationsManager(db)
+            sync_db_mock.assert_called_once()
+            sync_db_mock.reset_mock()
+
+            # repeated calls get repeated syncs
+            AllocationsManager(db)
+            sync_db_mock.assert_called_once()
+            sync_db_mock.reset_mock()
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                sync_file = Path(tmpdir) / 'sync-done-file'
+                cfg.CONF.set_override('sync_allocations_done_file_path', str(sync_file), group='ml2_aci')
+
+                # sync, this time the file gets created
+                AllocationsManager(db)
+                sync_db_mock.assert_called_once()
+                sync_db_mock.reset_mock()
+
+                # sync not executed
+                AllocationsManager(db)
+                sync_db_mock.assert_not_called()
+
+                self.assertEqual(open(sync_file).read(), str(os.getpid()))
