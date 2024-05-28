@@ -36,7 +36,7 @@ CONF = cfg.CONF
 RETRY_LIMIT = 2
 FALLBACK_EXCEPTIONS = (rexc.ConnectionError, rexc.Timeout,
                        rexc.TooManyRedirects, rexc.InvalidURL,
-                       rexc.HTTPError, LoginError)
+                       rexc.HTTPError, LoginError, rexc.ReadTimeout)
 RETRY_EXCEPTIONS = FALLBACK_EXCEPTIONS + (SSLError, CommitError, QueryError)
 requests.packages.urllib3.disable_warnings()
 _TOKEN_REFRESH_LOCK = threading.Lock()
