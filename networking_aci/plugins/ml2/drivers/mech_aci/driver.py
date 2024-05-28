@@ -479,8 +479,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         # net and snp az need to match. they need to either be None or an AZ
         if net_az_hint != snp_az:
             raise aci_exc.SubnetSubnetPoolAZAffinityError(network_id=net['id'], net_az_hint=net_az_hint,
-                                                         subnetpool_id=context.current['subnetpool_id'],
-                                                         subnetpool_az=snp_az)
+                                                          subnetpool_id=context.current['subnetpool_id'],
+                                                          subnetpool_az=snp_az)
 
     def cleanup_segment_if_needed(self, context, port, network, binding_levels, segment):
         if not segment:
