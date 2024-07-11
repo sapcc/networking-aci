@@ -321,6 +321,8 @@ class ACIConfig:
         for hostgroup_name, hostgroup in self._hostgroups.items():
             hostgroup['name'] = hostgroup_name
             hostgroup['child_hostgroups'] = []
+            if 'physical_network' not in hostgroup:
+                hostgroup['physical_network'] = hostgroup_name
 
             # handle segment ranges
             segment_ranges = hostgroup['segment_range']
