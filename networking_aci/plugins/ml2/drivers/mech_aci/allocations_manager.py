@@ -12,6 +12,8 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+from itertools import groupby
+from operator import itemgetter
 import os
 import random
 import time
@@ -369,7 +371,7 @@ class AllocationsManager(object):
         level = 1  # Currently only supporting one level in hierarchy
         segment_type = 'vlan'
 
-        config_hg_names = list(ACI_CONFIG.hostgroups)
+        config_physnets = {hg['physical_network'] for hg in ACI_CONFIG.hostgroups.values()}
         ctx = context.get_admin_context()
         with db_api.CONTEXT_WRITER.using(ctx) as session:
             # fetch allocations from db
@@ -385,7 +387,7 @@ class AllocationsManager(object):
             hosts_to_delete = set()  # orphaned hosts with deletable allocs (no network_id assigned)
             for n, db_alloc in enumerate(db_allocs):
                 if db_alloc.host not in allocations:
-                    if db_alloc.host not in config_hg_names:
+                    if db_alloc.host not in config_physnets:
                         if db_alloc.network_id is None:
                             # at least one allocation with this host can be deleted
                             hosts_to_delete.add(db_alloc.host)
@@ -398,28 +400,32 @@ class AllocationsManager(object):
 
             # sync existing hostgroups (remove out-of-range allocs, add new allocs)
             LOG.debug("Processing hostgroups")
-            for hg_name, hg_config in ACI_CONFIG.hostgroups.items():
-                if hg_config['direct_mode']:
-                    continue
+            hostgroups = [hg for hg in ACI_CONFIG.hostgroups.values() if not hg['direct_mode']]
+            hostgroups.sort(key=itemgetter('physical_network'))
+            for hg_physnet, hg_configs in groupby(hostgroups, key=itemgetter('physical_network')):
+                hg_vlans = set()
+                for hg_config in hg_configs:
+                    hg_vlans |= self._segmentation_ids(hg_config)
 
-                hg_vlans = self._segmentation_ids(hg_config)
-                if hg_name in allocations:
+                if hg_physnet in allocations:
                     # delete extra allocs
-                    out_of_range_ids = no_net_allocations[hg_name] - hg_vlans
+                    out_of_range_ids = no_net_allocations[hg_physnet] - hg_vlans
                     if out_of_range_ids:
-                        LOG.debug("Deleting %s out-of-range allocations with no assigned network for hostgroup %s",
-                                  len(out_of_range_ids), hg_name)
+                        LOG.debug("Deleting %s out-of-range allocations with no assigned network for "
+                                  "physical network %s",
+                                  len(out_of_range_ids), hg_physnet)
                         # delete all extra allocations that don't have a network_id referenced
                         del_q = session.query(AllocationsModel)
-                        del_q = del_q.filter_by(level=level, segment_type=segment_type, host=hg_name, network_id=None)
+                        del_q = del_q.filter_by(level=level, segment_type=segment_type, host=hg_physnet,
+                                                network_id=None)
                         del_q = del_q.filter(AllocationsModel.segmentation_id.in_(out_of_range_ids))
                         del_q.delete()
 
-                missing_ids = hg_vlans - allocations.get(hg_name, set())
+                missing_ids = hg_vlans - allocations.get(hg_physnet, set())
                 if missing_ids:
-                    LOG.debug("Adding %s allocations for hostgroup %s", len(missing_ids), hg_name)
+                    LOG.debug("Adding %s allocations for physical network %s", len(missing_ids), hg_physnet)
                     for seg_id in missing_ids:
-                        alloc = AllocationsModel(host=hg_name, level=level, segment_type=segment_type,
+                        alloc = AllocationsModel(host=hg_physnet, level=level, segment_type=segment_type,
                                                  segmentation_id=seg_id, network_id=None)
                         session.add(alloc)
 

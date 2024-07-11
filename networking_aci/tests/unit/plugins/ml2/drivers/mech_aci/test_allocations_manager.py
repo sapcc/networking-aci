@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import itertools
 import os
 from pathlib import Path
 import tempfile
@@ -77,18 +78,21 @@ class TestAllocationsManager(NeutronDbPluginV2TestCase):
         hostgroups = {
             'seagull': {
                 'direct_mode': False,
+                'physical_network': 'seagull',
                 'hosts': [],
                 'segment_range': [(42, 45)],
                 'segment_type': 'vlan',
             },
             'oystercatcher': {
                 'direct_mode': False,
+                'physical_network': 'oystercatcher',
                 'hosts': [],
                 'segment_range': [(100, 103)],
                 'segment_type': 'vlan',
             },
             'sparrow': {
                 'direct_mode': True,
+                'physical_network': 'sparrow',
                 'hosts': [],
                 'segment_range': [(123, 234)],
                 'segment_type': 'vlan',
@@ -131,3 +135,60 @@ class TestAllocationsManager(NeutronDbPluginV2TestCase):
                 sync_db_mock.assert_not_called()
 
                 self.assertEqual(open(sync_file).read(), str(os.getpid()))
+
+    def test_sync_allocations_split_hg_same_physnet(self):
+        expected_gulls = [('seagull', vid, None)
+                          for vid in itertools.chain(range(42, 46), range(100, 104), range(123, 127))]
+        expected_jays = [('jay', vid, None) for vid in range(200, 203)]
+        expected_result = expected_gulls + expected_jays
+
+        db = common.DBPlugin()
+        ACI_CONFIG.db = db
+
+        hostgroups = {
+            'herring-gull': {
+                'direct_mode': False,
+                'hosts': [],
+                'physical_network': 'seagull',
+                'segment_range': [(42, 45)],
+                'segment_type': 'vlan',
+            },
+            'yellow-legged-gull': {
+                'direct_mode': False,
+                'hosts': [],
+                'physical_network': 'seagull',
+                'segment_range': [(100, 103)],
+                'segment_type': 'vlan',
+            },
+            'seagull': {
+                'direct_mode': False,
+                'physical_network': 'seagull',
+                'hosts': [],
+                'segment_range': [(123, 126)],
+                'segment_type': 'vlan',
+            },
+            'blue-jay': {
+                'direct_mode': False,
+                'hosts': [],
+                'physical_network': 'jay',
+                'segment_range': [(200, 202)],
+                'segment_type': 'vlan',
+            },
+            'diadem-jay': {
+                'direct_mode': False,
+                'hosts': [],
+                'physical_network': 'jay',
+                'segment_range': [(200, 202)],
+                'segment_type': 'vlan',
+            },
+        }
+
+        with mock.patch('networking_aci.plugins.ml2.drivers.mech_aci.config.ACIConfig.hostgroups',
+                        new_callable=mock.PropertyMock, return_value=hostgroups):
+            AllocationsManager(db)
+
+        ctx = context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx) as sess:
+            db_result = [(a.host, a.segmentation_id, a.network_id) for a in sess.query(AllocationsModel).all()]
+
+        self.assertEqual(sorted(expected_result), sorted(db_result))
