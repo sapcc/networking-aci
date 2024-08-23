@@ -340,6 +340,10 @@ class ACIConfig:
                                                                         .format(far_hg, hostgroup_name))
                 self._hostgroups[far_hg]['child_hostgroups'].append(hostgroup_name)
 
+                # copy over AZs so the AZ check works properly for subgroups
+                if not hostgroup['availability_zones']:
+                    hostgroup['availability_zones'] = self._hostgroups[far_hg]['availability_zones']
+
             if not hostgroup['baremetal_pc_policy_group']:
                 hostgroup['baremetal_pc_policy_group'] = CONF.ml2_aci.default_baremetal_pc_policy_group
 
