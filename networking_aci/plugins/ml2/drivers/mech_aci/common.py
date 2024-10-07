@@ -31,6 +31,7 @@ from neutron.db.models import tag as tag_models
 from neutron.db import segments_db as ml2_db
 from neutron.plugins.ml2 import models as ml2_models
 import neutron.services.trunk.models as trunk_models
+from oslo_config import cfg
 from oslo_log import log as logging
 import sqlalchemy as sa
 
@@ -262,6 +263,9 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         return vlan_map
 
     def get_az_aware_external_subnets(self, context):
+        if not cfg.CONF.ml2_aci.handle_all_l3_gateways:
+            return []
+
         query = context.session.query(models_v2.Subnet.id, models_v2.Subnet.cidr,
                                       models_v2.Network.availability_zone_hints, ascope_models.AddressScope.name)
         query = query.join(models_v2.Network,
@@ -273,6 +277,14 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         query = query.join(ascope_models.AddressScope,
                            models_v2.SubnetPool.address_scope_id == ascope_models.AddressScope.id)
         query = query.filter(models_v2.Network.availability_zone_hints != "[]")
+
+        # ignore networks with aci_const.CC_FABRIC_L3_GATEWAY_TAG tag
+        query = query.join(tag_models.Tag,
+                           sa.and_(
+                               models_v2.Network.standard_attr_id == tag_models.Tag.standard_attr_id,
+                               tag_models.Tag.tag == aci_const.CC_FABRIC_L3_GATEWAY_TAG),
+                           isouter=True)
+        query = query.filter(tag_models.Tag.tag.is_(None))
 
         subnets = []
         for entry in query.all():
@@ -287,6 +299,9 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         return subnets
 
     def get_external_subnet_nullroute_mapping(self, context, level=1):
+        if not cfg.CONF.ml2_aci.handle_all_l3_gateways:
+            return {}
+
         # 1. fetch all subnets where their CIDR doesn't completely overlap with a subnetpool prefix
         #   * every external subnet which doesn't have a matching prefix gets
         #   * we could filter here already for non-overlappings, but it shouldn't make much of a difference
@@ -304,6 +319,16 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                            models_v2.Subnet.subnetpool_id == models_v2.SubnetPool.id)
         query = query.join(ascope_models.AddressScope,
                            models_v2.SubnetPool.address_scope_id == ascope_models.AddressScope.id)
+
+        # ignore networks with aci_const.CC_FABRIC_L3_GATEWAY_TAG tag
+        query = query.join(models_v2.Network,
+                           models_v2.Subnet.network_id == models_v2.Network.id)
+        query = query.join(tag_models.Tag,
+                           sa.and_(
+                               models_v2.Network.standard_attr_id == tag_models.Tag.standard_attr_id,
+                               tag_models.Tag.tag == aci_const.CC_FABRIC_L3_GATEWAY_TAG),
+                           isouter=True)
+        query = query.filter(tag_models.Tag.tag.is_(None))
         all_subnets = list(query.all())
 
         # 2. fetch all subnetpools + their CIDRs and find out which is the longest matching prefix for each pool
