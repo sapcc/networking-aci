@@ -29,21 +29,22 @@ class NetworkingAciMechanismDriverSubnetPoolTest(base.NetworkingAciMechanismDriv
 
     def test_create_subnet_az_hint_matches(self):
         net_kwargs = {'arg_list': (extnet_api.EXTERNAL,), extnet_api.EXTERNAL: True}
-        with self.network(**net_kwargs) as network:
+        with self.network(**net_kwargs, as_admin=True) as network:
             with self.subnetpool(["1.1.0.0/16", "1.2.0.0/24"], name="foo", tenant_id="foo", admin=True) as snp:
                 with self.subnet(network=network, cidr="1.1.1.0/24", gateway_ip="1.1.1.1",
-                                 subnetpool_id=snp['subnetpool']['id']) as subnet:
+                                 subnetpool_id=snp['subnetpool']['id'], as_admin=True) as subnet:
                     self.assertIsNotNone(subnet)
 
     def test_create_subnet_network_az_snp_no_az_fails(self):
         net_kwargs = {'arg_list': (extnet_api.EXTERNAL,), extnet_api.EXTERNAL: True}
-        with self.network(availability_zone_hints=["qa-de-1a"], **net_kwargs) as network:
+        with self.network(availability_zone_hints=["qa-de-1a"], **net_kwargs, as_admin=True) as network:
             with self.subnetpool(["1.1.0.0/16", "1.2.0.0/24"], address_scope_id=self._address_scope['id'], name="foo",
                                  tenant_id="foo", admin=True) as snp:
                 resp = self._create_subnet(self.fmt, cidr="1.1.1.0/24", gateway_ip="1.1.1.1",
                                            name="foo",
                                            net_id=network['network']['id'], tenant_id=network['network']['tenant_id'],
-                                           subnetpool_id=snp['subnetpool']['id'])
+                                           subnetpool_id=snp['subnetpool']['id'],
+                                           as_admin=True)
                 self.assertEqual(400, resp.status_code)
                 self.assertEqual("SubnetSubnetPoolAZAffinityError", resp.json['NeutronError']['type'])
                 self.assertIsNotNone(re.search(f"network {network['network']['id']} has AZ hint qa-de-1a,.*"
@@ -52,7 +53,7 @@ class NetworkingAciMechanismDriverSubnetPoolTest(base.NetworkingAciMechanismDriv
 
     def test_create_subnet_network_no_az_snp_az_fails(self):
         net_kwargs = {'arg_list': (extnet_api.EXTERNAL,), extnet_api.EXTERNAL: True}
-        with self.network(**net_kwargs) as network:
+        with self.network(**net_kwargs, as_admin=True) as network:
             with self.subnetpool(["1.1.0.0/16", "1.2.0.0/24"], address_scope_id=self._address_scope['id'], name="foo",
                                  tenant_id="foo", admin=True) as snp:
                 ctx = context.get_admin_context()
@@ -63,7 +64,7 @@ class NetworkingAciMechanismDriverSubnetPoolTest(base.NetworkingAciMechanismDriv
                 resp = self._create_subnet(self.fmt, cidr="1.1.1.0/24", gateway_ip="1.1.1.1",
                                            name="foo",
                                            net_id=network['network']['id'], tenant_id=network['network']['tenant_id'],
-                                           subnetpool_id=snp['subnetpool']['id'])
+                                           subnetpool_id=snp['subnetpool']['id'], as_admin=True)
                 self.assertEqual(400, resp.status_code)
                 self.assertEqual("SubnetSubnetPoolAZAffinityError", resp.json['NeutronError']['type'])
                 self.assertIsNotNone(re.search(f"network {network['network']['id']} has AZ hint None,.*"
@@ -73,9 +74,9 @@ class NetworkingAciMechanismDriverSubnetPoolTest(base.NetworkingAciMechanismDriv
     def test_create_subnet_network_snp_az_hint_works_when_turned_off(self):
         cfg.CONF.set_override('subnet_subnetpool_az_check_enabled', False, group='ml2_aci')
         net_kwargs = {'arg_list': (extnet_api.EXTERNAL,), extnet_api.EXTERNAL: True}
-        with self.network(availability_zone_hints=["qa-de-1a"], **net_kwargs) as network:
+        with self.network(availability_zone_hints=["qa-de-1a"], **net_kwargs, as_admin=True) as network:
             with self.subnetpool(["1.1.0.0/16", "1.2.0.0/24"], address_scope_id=self._address_scope['id'], name="foo",
                                  tenant_id="foo", admin=True) as snp:
                 with self.subnet(network=network, cidr="1.1.1.0/24", gateway_ip="1.1.1.1",
-                                 subnetpool_id=snp['subnetpool']['id']) as subnet:
+                                 subnetpool_id=snp['subnetpool']['id'], as_admin=True) as subnet:
                     self.assertIsNotNone(subnet)

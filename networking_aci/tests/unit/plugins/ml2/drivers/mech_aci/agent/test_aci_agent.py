@@ -19,8 +19,6 @@ from oslo_config import cfg
 
 from networking_aci.tests.unit import utils
 
-cfg.CONF.use_stderr = False
-cfg.CONF(args=[])
 
 
 class AciNeutronAgentTest(base.BaseTestCase):

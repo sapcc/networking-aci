@@ -13,6 +13,7 @@ class NetworkingAciMechanismDriverTestBase(test_plugin.Ml2PluginV2TestCase, base
         return dict(service_plugins='tag')
 
     def setUp(self):
+        config.register_common_config_options()
         self._mechanism_drivers.append(constants.ACI_DRIVER_NAME)
         cfg.CONF.set_override('debug', True)
         config.setup_logging()
