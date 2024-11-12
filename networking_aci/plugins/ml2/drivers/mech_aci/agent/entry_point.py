@@ -27,6 +27,7 @@ LOG = logging.getLogger(__name__)
 
 
 def register_options():
+    common_config.register_common_config_options()
     config.register_agent_state_opts_helper(cfg.CONF)
 
 
