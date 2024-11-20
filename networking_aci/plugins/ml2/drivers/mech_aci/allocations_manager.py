@@ -103,17 +103,18 @@ class AllocationsManager(object):
         segment_type = host_config.get('segment_type', 'vlan')
         segment_physnet = host_config.get('physical_network', None)
 
-        session = db_api.get_writer_session()
+        ctx = context.get_admin_context()
         segmentation_id = self._get_provider_attribute(network, "provider:segmentation_id")
         network_id = network["id"]
-        segment = session.query(ml2_models.NetworkSegment).filter_by(segmentation_id=segmentation_id,
+        with db_api.CONTEXT_READER.using(ctx):
+            segment = ctx.session.query(ml2_models.NetworkSegment).filter_by(segmentation_id=segmentation_id,
                                                                      physical_network=segment_physnet,
                                                                      network_type=segment_type,
                                                                      network_id=network_id,
                                                                      level=level).first()
 
         if not segment:
-            with session.begin(subtransactions=True):
+            with db_api.CONTEXT_WRITER.using(ctx):
                 segment = ml2_models.NetworkSegment(
                     id=uuidutils.generate_uuid(),
                     network_id=network_id,
@@ -123,7 +124,7 @@ class AllocationsManager(object):
                     segment_index=level,
                     is_dynamic=False
                 )
-                session.add(segment)
+                ctx.session.add(segment)
 
         return AllocationsModel(host=host_id, level=level, segment_type=segment_type, segmentation_id=segmentation_id,
                                 segment_id=segment.id, network_id=network_id)
@@ -135,21 +136,21 @@ class AllocationsManager(object):
         segment_physnet = host_config.get('physical_network', None)
         network_id = network['id']
 
-        session = db_api.get_writer_session()
-        with db_api.exc_to_retry(sa.exc.IntegrityError), session.begin(subtransactions=True):
+        ctx = context.get_admin_context()
+        with db_api.exc_to_retry(sa.exc.IntegrityError), db_api.CONTEXT_WRITER.using(ctx):
             LOG.debug("Searching for available allocation for host id %(host_id)s "
                       "segment_type %(segment_type)s network_id %(network_id)s segment_physnet %(segment_physnet)s",
                       {"host_id": host_id, "segment_type": segment_type, "segment_physnet": segment_physnet,
                        "network_id": network_id}
                       )
 
-            alloc = session.query(AllocationsModel).filter_by(host=host_id, level=level, segment_type=segment_type,
+            alloc = ctx.session.query(AllocationsModel).filter_by(host=host_id, level=level, segment_type=segment_type,
                                                               network_id=network_id).first()
             if alloc and alloc.segment_id:
                 return alloc
 
             # we regard a segment as unallocated if its segment_id is None
-            select = (session.query(AllocationsModel).
+            select = (ctx.session.query(AllocationsModel).
                       filter_by(host=host_id, level=level, segment_type=segment_type, segment_id=None))
 
             # Selected segment can be allocated before update by someone else,
@@ -171,7 +172,7 @@ class AllocationsManager(object):
                 segment_index=level,
                 is_dynamic=False
             )
-            session.add(segment)
+            ctx.session.add(segment)
 
             raw_segment = {
                 'host': alloc.host,
@@ -182,7 +183,7 @@ class AllocationsManager(object):
             LOG.debug("%(type)s segment allocated from pool with %(segment)s ",
                       {"type": alloc.segment_type, "segment": alloc.segmentation_id})
 
-            count = (session.query(AllocationsModel).
+            count = (ctx.session.query(AllocationsModel).
                      filter_by(segment_id=None, **raw_segment).
                      update({"network_id": network_id, 'segment_id': segment.id}))
 
@@ -207,10 +208,10 @@ class AllocationsManager(object):
     def _release_vlan_segment(self, network, host_config, level, segment):
         LOG.debug("Checking release for segment %(segment)s with top level VLAN segment", {"segment": segment})
 
-        session = db_api.get_writer_session()
-        with session.begin(subtransactions=True):
+        ctx = context.get_admin_context()
+        with db_api.CONTEXT_WRITER.using(ctx):
             # Delete the network segment
-            query = (session.query(ml2_models.NetworkSegment).
+            query = (ctx.session.query(ml2_models.NetworkSegment).
                      filter_by(id=segment['id'], network_id=network['id'], network_type=segment['network_type'],
                                segmentation_id=segment['segmentation_id'], segment_index=level))
             query.delete()
@@ -222,9 +223,9 @@ class AllocationsManager(object):
         segmentation_id = segment['segmentation_id']
         network_id = network['id']
 
-        session = db_api.get_writer_session()
-        with session.begin(subtransactions=True):
-            select = (session.query(models.PortBindingLevel).
+        ctx = context.get_admin_context()
+        with db_api.CONTEXT_WRITER.using(ctx):
+            select = (ctx.session.query(models.PortBindingLevel).
                       filter_by(segment_id=segment_id, level=level))
 
             if select.count() > 0:
@@ -234,7 +235,7 @@ class AllocationsManager(object):
 
             segmentation_ids = self._segmentation_ids(host_config)
             inside = segmentation_id in segmentation_ids
-            query = (session.query(AllocationsModel).
+            query = (ctx.session.query(AllocationsModel).
                      filter_by(network_id=network_id, level=level, segment_type=segment_type,
                                segment_id=segment_id))
             if inside:
@@ -243,7 +244,7 @@ class AllocationsManager(object):
                 query.delete()
 
             # Delete the network segment
-            query = (session.query(ml2_models.NetworkSegment).
+            query = (ctx.session.query(ml2_models.NetworkSegment).
                      filter_by(id=segment_id, network_id=network_id, network_type=segment_type,
                                segmentation_id=segmentation_id, segment_index=level))
 
@@ -281,15 +282,15 @@ class AllocationsManager(object):
         _release_vxlan_segment().
         """
         is_access = segmentation_id is None
-        session = context.session
+        ctx = context.get_admin_context()
         segment_type = hostgroup.get('segment_type', 'vlan')
         segment_physnet = hostgroup.get('physical_network')
         network_id = network['id']
         access_id_pool = common.get_set_from_ranges(hostgroup['baremetal_access_vlan_ranges'])
 
-        with db_api.exc_to_retry(sa.exc.IntegrityError), session.begin(subtransactions=True):
+        with db_api.exc_to_retry(sa.exc.IntegrityError), db_api.CONTEXT_WRITER.using(ctx):
             # 1. check if segment exists
-            existing_segments = (session.query(ml2_models.NetworkSegment)
+            existing_segments = (ctx.session.query(ml2_models.NetworkSegment)
                                  .filter_by(network_id=network_id, physical_network=segment_physnet,
                                             segment_index=level, network_type=segment_type)
                                  .all())
@@ -323,7 +324,7 @@ class AllocationsManager(object):
                                                           segment_id=far_segment_id)
             else:
                 # for trunk mode: check segmentation_id is not already in use in physnet
-                existing_segments = (session.query(ml2_models.NetworkSegment)
+                existing_segments = (ctx.session.query(ml2_models.NetworkSegment)
                                      .filter_by(segmentation_id=segmentation_id, physical_network=segment_physnet,
                                                 segment_index=level, network_type=segment_type)
                                      .all())
@@ -334,7 +335,7 @@ class AllocationsManager(object):
             # 3. no segment exists, allocate one
             if is_access:
                 # find a free vlan id from the pool
-                physnet_segments = (session.query(ml2_models.NetworkSegment)
+                physnet_segments = (ctx.session.query(ml2_models.NetworkSegment)
                                     .filter_by(physical_network=segment_physnet)
                                     .all())
                 used_ids = set(n.segmentation_id for n in physnet_segments)
@@ -353,7 +354,7 @@ class AllocationsManager(object):
                 segment_index=level,
                 is_dynamic=False
             )
-            session.add(segment)
+            ctx.session.add(segment)
 
             return segment
 
@@ -443,16 +444,16 @@ class AllocationsManager(object):
     def _sync_hostgroup_modes(self):
         LOG.info("Preparing hostgroup modes sync")
 
-        session = db_api.get_writer_session()
-        with session.begin(subtransactions=True):
+        ctx = context.get_admin_context()
+        with db_api.CONTEXT_WRITER.using(ctx):
             # fetch all mode-hostgroups from db
             db_groups = []
-            for db_entry in (session.query(HostgroupModeModel).with_for_update()):
+            for db_entry in (ctx.session.query(HostgroupModeModel).with_for_update()):
                 db_groups.append(db_entry.hostgroup)
 
             for hg_name, hg in ACI_CONFIG.hostgroups.items():
                 if hg['direct_mode'] and hg_name not in db_groups:
                     LOG.info("Adding %s to hostgroup db", hg_name)
                     hgmm = HostgroupModeModel(hostgroup=hg_name)
-                    session.add(hgmm)
+                    ctx.session.add(hgmm)
         LOG.info("Hostgroup modes synced")
