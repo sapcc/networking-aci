@@ -29,6 +29,7 @@ from neutron.db.models import l3agent as l3agent_models
 from neutron.db.models import segment as segment_models
 from neutron.db.models import tag as tag_models
 from neutron.db import segments_db as ml2_db
+from neutron_lib.db import api as db_api
 from neutron.plugins.ml2 import models as ml2_models
 import neutron.services.trunk.models as trunk_models
 from oslo_config import cfg
@@ -49,14 +50,15 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
     def __init__(self):
         pass
 
+    @db_api.CONTEXT_READER
     def get_ports_with_binding(self, context, network_id):
-        with context.session.begin(subtransactions=True):
-            query = context.session.query(models_v2.Port)
-            query1 = query.join(ml2_models.PortBinding)
-            bind_ports = query1.filter(models_v2.Port.network_id == network_id)
+        query = context.session.query(models_v2.Port)
+        query1 = query.join(ml2_models.PortBinding)
+        bind_ports = query1.filter(models_v2.Port.network_id == network_id)
 
-            return bind_ports
+        return bind_ports
 
+    @db_api.CONTEXT_READER
     def get_network_ids(self, context):
         result = []
         query = context.session.query(models_v2.Network.id).order_by(models_v2.Network.id)
@@ -87,6 +89,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return scope.get('name')
 
+    @db_api.CONTEXT_READER
     def get_hostgroup_modes(self, context, hostgroup_names=None):
         hg_modes = {}
         query = context.session.query(HostgroupModeModel)
@@ -100,15 +103,16 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         hg_modes = self.get_hostgroup_modes(context, [hostgroup_name])
         return hg_modes.get(hostgroup_name)
 
+    @db_api.CONTEXT_WRITER
     def set_hostgroup_mode(self, context, hostgroup_name, hostgroup_mode):
-        with context.session.begin(subtransactions=True):
-            query = context.session.query(HostgroupModeModel).filter(HostgroupModeModel.hostgroup == hostgroup_name)
-            hg = query.first()
-            if not hg:
-                return False
-            hg.mode = hostgroup_mode
+        query = context.session.query(HostgroupModeModel).filter(HostgroupModeModel.hostgroup == hostgroup_name)
+        hg = query.first()
+        if not hg:
+            return False
+        hg.mode = hostgroup_mode
         return True
 
+    @db_api.CONTEXT_READER
     def get_hosts_on_segment(self, context, segment_id, level=None):
         """Get all binding hosts (from host or binding_profile) present on a segment"""
         # get all ports bound to segment, extract their host
@@ -125,6 +129,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             hosts.add(host)
         return hosts
 
+    @db_api.CONTEXT_READER
     def get_hosts_on_network(self, context, network_id, level=None, with_segment=False, transit_hostgroups=None):
         """Get all binding hosts (from host or binding_profile) present on a network"""
         fields = [ml2_models.PortBinding.host, ml2_models.PortBinding.profile]
@@ -167,6 +172,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return hosts
 
+    @db_api.CONTEXT_READER
     def get_hosts_on_physnet(self, context, physical_network, level=None, with_segment=False, with_segmentation=False):
         """Get all binding hosts (from host or binding_profile) present on a network
 
@@ -201,6 +207,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 hosts.add(host)
         return hosts
 
+    @db_api.CONTEXT_READER
     def get_segment_ids_by_physnet(self, context, physical_network, fuzzy_match=False):
         query = context.session.query(segment_models.NetworkSegment.id)
         if fuzzy_match:
@@ -209,6 +216,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             query = query.filter(segment_models.NetworkSegment.physical_network == physical_network)
         return [seg.id for seg in query.all()]
 
+    @db_api.CONTEXT_READER
     def get_ports_on_network_by_physnet_prefix(self, context, network_id, physical_network_prefix):
         # get all ports for a network that are on a segment with a physnet prefix
         fields = [
@@ -233,6 +241,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return result
 
+    @db_api.CONTEXT_READER
     def get_bound_projects_by_physnet_prefix(self, context, physical_network_prefix):
         # get all projects that have a port bound to a segment with this prefix
         query = context.session.query(models_v2.Port.project_id)
@@ -244,6 +253,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return [entry.project_id for entry in query.all()]
 
+    @db_api.CONTEXT_READER
     def get_trunk_vlan_usage_on_project(self, context, project_id, segmentation_id=None):
         # return vlan --> networks mapping for aci trunk ports inside a project
         query = context.session.query(models_v2.Port.network_id, trunk_models.SubPort.segmentation_id)
@@ -262,6 +272,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return vlan_map
 
+    @db_api.CONTEXT_READER
     def get_az_aware_external_subnets(self, context):
         if not cfg.CONF.ml2_aci.handle_all_l3_gateways:
             return []
@@ -298,6 +309,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return subnets
 
+    @db_api.CONTEXT_READER
     def get_external_subnet_nullroute_mapping(self, context, level=1):
         if not cfg.CONF.ml2_aci.handle_all_l3_gateways:
             return {}
@@ -417,6 +429,7 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return subnets
 
+    @db_api.CONTEXT_READER
     def get_subnetpool_details(self, context, subnetpool_ids):
         # get az from tags
         fields = [models_v2.SubnetPool.id, tag_models.Tag.tag]
