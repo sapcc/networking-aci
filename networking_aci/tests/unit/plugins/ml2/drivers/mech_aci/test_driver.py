@@ -4,6 +4,7 @@ from neutron.db.models import address_scope as ascope_models
 from neutron.db.models import tag as tag_models
 from neutron.db import models_v2
 from neutron_lib.api.definitions import external_net as extnet_api
+from neutron_lib.db import api as db_api
 from neutron_lib import context
 from neutron.tests.common import helpers as neutron_test_helpers
 from neutron.tests.unit.plugins.ml2 import test_plugin
@@ -23,7 +24,7 @@ class NetworkingAciMechanismDriverSubnetPoolTest(base.NetworkingAciMechanismDriv
         super().setUp()
         self._register_azs()
         ctx = context.get_admin_context()
-        with ctx.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(ctx):
             self._address_scope = ascope_models.AddressScope(name="the-open-sea", ip_version=4)
             ctx.session.add(self._address_scope)
 
@@ -57,7 +58,7 @@ class NetworkingAciMechanismDriverSubnetPoolTest(base.NetworkingAciMechanismDriv
             with self.subnetpool(["1.1.0.0/16", "1.2.0.0/24"], address_scope_id=self._address_scope['id'], name="foo",
                                  tenant_id="foo", admin=True) as snp:
                 ctx = context.get_admin_context()
-                with ctx.session.begin():
+                with db_api.CONTEXT_WRITER.using(ctx):
                     snp_db = ctx.session.query(models_v2.SubnetPool).get(snp['subnetpool']['id'])
                     ctx.session.add(tag_models.Tag(standard_attr_id=snp_db.standard_attr_id,
                                     tag="availability-zone::qa-de-1a"))
