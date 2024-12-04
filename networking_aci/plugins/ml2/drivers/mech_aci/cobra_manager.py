@@ -132,6 +132,11 @@ class CobraManager(object):
             epret = fv.RsBdToEpRet(bd, tnFvEpRetPolName=ep_retention_policy)
             bd_objs.append(epret)
 
+        if not external:
+            # make sure we have an RsCtx associated to the BD for internal networks, even if we don't have a subnet
+            rsctx = fv.RsCtx(bd, self.tenant_default_vrf, tnFvCtxName=self.tenant_default_vrf)
+            bd_objs.append(rsctx)
+
         # We have to make seperate config requests because cobra can't
         # handle MOs with different root contexts
         self.apic.commit(bd_objs)
