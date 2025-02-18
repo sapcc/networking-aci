@@ -159,7 +159,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                            .format(port['id'], hostgroup['name'], seg_port['port_id'], seg_port['project_id'],
                                    port['project_id']))
                     LOG.error(msg)
-                    raise n_exc.NeutronException(msg)
+                    raise n_exc.NeutronException(message=msg)
 
             ACI_CONFIG.annotate_baremetal_info(context._plugin_context, hostgroup, network['id'],
                                                override_project_id=port['project_id'])

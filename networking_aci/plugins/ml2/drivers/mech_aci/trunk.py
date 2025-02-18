@@ -77,7 +77,7 @@ class ACITrunkDriver(base.DriverBase):
             # Event: https://github.com/sapcc/neutron/blob/e49485f2aa7dd48f57f2d94080a37c49306e87d4/neutron/services/trunk/plugin.py#L362
             current_state = payload.states[0]
         else:
-            raise NeutronException("Unsupported type of resource {}".format(resource))
+            raise NeutronException(message="Unsupported type of resource {}".format(resource))
         parent = self._get_parent_port(payload.context, current_state.port_id)
         if not parent:
             return
@@ -87,7 +87,7 @@ class ACITrunkDriver(base.DriverBase):
 
         hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(payload.context, parent_host)
         if not hostgroup:
-            raise NeutronException("No hostgroup config found for port {} host {}"
+            raise NeutronException(message="No hostgroup config found for port {} host {}"
                                    .format(current_state.port_id, parent_host))
 
         if not (hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL):
