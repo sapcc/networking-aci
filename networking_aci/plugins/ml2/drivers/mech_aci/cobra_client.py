@@ -54,6 +54,12 @@ def _retry(func):
             if token_validity < CONF.ml2_aci.reauth_threshold:
                 LOG.debug("Acquiring session refresh lock")
                 with _TOKEN_REFRESH_LOCK:
+                    # refetch token validity in case another thread has refreshed the connection
+                    token_validity = (self.mo_dir.session.refreshTime or 0) - time.time()
+
+                    if self.mo_dir.session.refreshTime is None:
+                        LOG.warning("API mo_dir refreshTime was %s", self.mo_dir.session.refreshTime)
+
                     if token_validity >= CONF.ml2_aci.reauth_threshold:
                         LOG.debug("Session was already refreshed by another thread, continuing")
                     elif token_validity > 1:
