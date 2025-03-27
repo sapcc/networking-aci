@@ -253,7 +253,7 @@ class AllocationsManager(object):
             return True
 
     @db_api.retry_db_errors
-    def allocate_baremetal_segment(self, context, network, hostgroup, level, segmentation_id):
+    def allocate_baremetal_segment(self, network, hostgroup, level, segmentation_id):
         """Allocate a "baremetal segment" (with or without pre-specified id)
 
         Baremetal segments are dynamically allocated based on their physnet (physnet name will be
@@ -316,7 +316,7 @@ class AllocationsManager(object):
             # 2. sanity checks
             if is_access:
                 # for access mode: check that no other network has bound this in host mode
-                host_segments = self.db.get_hosts_on_physnet(context, segment_physnet, level=1,
+                host_segments = self.db.get_hosts_on_physnet(ctx, segment_physnet, level=1,
                                                              with_segment=True, with_segmentation=True)
                 for far_host, far_segment_id, far_segmentation_id in host_segments:
                     if far_host in hostgroup['hosts'] and far_segmentation_id in access_id_pool:
