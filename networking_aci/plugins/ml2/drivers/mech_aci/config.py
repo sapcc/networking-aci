@@ -119,6 +119,13 @@ aci_opts = [
     cfg.BoolOpt('advertise_hostroutes', default=True,
                 help='Advertise hostroutes by setting the host_base_routing flag for BDs of external networks'),
 
+    cfg.BoolOpt('prometheus_enabled', default=True,
+                help='Enable internal Prometheus metric exporter'),
+    cfg.IPOpt('prometheus_listen_address', default='0.0.0.0',
+              help='Address to listen on for internal Prometheus metric exporter'),
+    cfg.PortOpt('prometheus_listen_port', default=9090,
+                help='Port to listen on for internal Prometheus metric exporter'),
+
     cfg.IntOpt('non_epg_syncloop_interval', default=15 * 60,
                help="Interval of the non-epg syncloop for syncing things that are not EPGs "
                     "(e.g. az aware subnet routes or nullroutes)"),
