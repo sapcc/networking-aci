@@ -44,13 +44,28 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     # FIXME: do I need buckets?
     #   buckets=[round(20 + x ** 2) for x in range(12)] + [INF])
+
+    metric_agent_syncloop = Histogram('agent_syncloop', 'Overall agent rpc_loop', namespace=aci_const.METRICS_NAMESPACE)
+
+    # TODO define what this one was meant to track
     metric_network_syncloop = Histogram('network_syncloop', 'TODO description', namespace=aci_const.METRICS_NAMESPACE)
-    metric_non_epg_syncloop = Histogram('non_epg_syncloop', 'TODO description', namespace=aci_const.METRICS_NAMESPACE)
-    metric_agent_syncloop = Histogram('agent_syncloop', 'TODO description', namespace=aci_const.METRICS_NAMESPACE)
-    metric_orphaned_epg_or_bd_deleted = Counter('orphaned_epg_or_bd_deleted', 'TODO description', namespace=aci_const.METRICS_NAMESPACE)
-    metric_network_changed_during_syncloop = Counter("network_changed_during_syncloop", "TODO description", namespace=aci_const.METRICS_NAMESPACE )
-    metric_sync_nullroutes = Histogram('sync_nullroutes', 'TODO description', namespace=aci_const.METRICS_NAMESPACE)
-    metric_sync_az_aware_subnet_routes = Histogram('sync_az_aware_subnet_routes', 'TODO description', namespace=aci_const.METRICS_NAMESPACE)
+
+    metric_non_epg_syncloop = Histogram('non_epg_syncloop', 
+                                        'Non epg syncloop  (includes sync_az_aware_subnet_routes and metric_sync_nullroutes)',
+                                        namespace=aci_const.METRICS_NAMESPACE)
+    metric_sync_az_aware_subnet_routes = Histogram('sync_az_aware_subnet_routes',
+                                                   'AZ aware subnet route sync', 
+                                                   namespace=aci_const.METRICS_NAMESPACE)
+    metric_sync_nullroutes = Histogram('sync_nullroutes',
+                                       'Nullroute sync', 
+                                       namespace=aci_const.METRICS_NAMESPACE)
+
+    metric_orphaned_epg_or_bd_deleted = Counter('orphaned_epg_or_bd_deleted',
+                                                'Counter of deleted orphaned EPG/BD',
+                                                namespace=aci_const.METRICS_NAMESPACE)
+    metric_network_changed_during_syncloop = Counter('network_changed_during_syncloop',
+                                                     'Counter of networks changed during the sync loop',
+                                                     namespace=aci_const.METRICS_NAMESPACE )
 
     def __init__(self,
                  minimize_polling=False,
@@ -251,6 +266,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
     def loop_count_and_wait(self, start_time):
         # sleep till end of polling interval
         elapsed = time.time() - start_time
+        # XXX is this metric_network_syncloop?
         LOG.debug("CI Agent rpc_loop - iteration:%(iter_num)d "
                   "completed. Elapsed:%(elapsed).3f",
                   {'iter_num': self.iter_num,
