@@ -598,12 +598,19 @@ class CobraManager(object):
 
                 for cidr in cidrs:
                     route = ip.RouteP(route_parent_dn, ip=cidr, pref=210)
-                    nh = ip.NexthopP(route, nhAddr="0.0.0.0/0", type="none")
+                    nh_address = "0.0.0.0/0"
+                    try:
+                        if netaddr.IPNetwork(cidr).version == 6:
+                            nh_address = "::/0"
+                    except netaddr.AddrFormatError as e:
+                        LOG.warning("Couldn't determine address verison of cidr %s, defaulting to next hop %s (%s)",
+                                    cidr, nh_address, e)
+                    nh = ip.NexthopP(route, nhAddr=nh_address, type="none")
                     try:
                         self.apic.commit([route, nh])
                     except Exception as e:
-                        LOG.error("Could not commit nullroute for %s in %s on %s: %s %s",
-                                  cidr, l3out_path, leaf_path, e.__class__.__name__, e)
+                        LOG.error("Could not commit nullroute for %s next hop %s in %s on %s: %s %s",
+                                  cidr, nh_address, l3out_path, leaf_path, e.__class__.__name__, e)
 
         if missing_route_parents:
             LOG.error("Nullroute sync skipped some nodes, as the ACI boilerplate config was missing: %s",
