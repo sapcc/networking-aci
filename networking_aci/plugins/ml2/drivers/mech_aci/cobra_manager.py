@@ -603,7 +603,7 @@ class CobraManager(object):
                         if netaddr.IPNetwork(cidr).version == 6:
                             nh_address = "::/0"
                     except netaddr.AddrFormatError as e:
-                        LOG.warning("Couldn't determine address verison of cidr %s, defaulting to next hop %s (%s)",
+                        LOG.warning("Couldn't determine address version of cidr %s, defaulting to next hop %s (%s)",
                                     cidr, nh_address, e)
                     nh = ip.NexthopP(route, nhAddr=nh_address, type="none")
                     try:
