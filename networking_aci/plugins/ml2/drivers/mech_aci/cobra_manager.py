@@ -92,6 +92,7 @@ class CobraManager(object):
             return "regular"  # trunk
 
     def ensure_domain_and_epg(self, context, network_id, external=False):
+        # TODO metrics 
         tenant = self.get_or_create_tenant(network_id)
         ep_retention_policy = None
 
@@ -467,6 +468,7 @@ class CobraManager(object):
         return self.tenant_manager.get_tenant_name(network_id)
 
     def sync_network(self, context, network):
+        # TODO add metric histogram with label per network
         self.clean_subnets(network)
         self.clean_physdoms(network)
         self.clean_bindings(network)

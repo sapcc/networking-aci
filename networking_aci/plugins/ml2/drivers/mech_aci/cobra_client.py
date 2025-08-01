@@ -48,6 +48,8 @@ def _retry(func):
         retry = kwargs.pop("retry", 0)
         max_retries = kwargs.pop("max_retries", 3)
 
+        ## XXX add counter
+
         try:
             # check if token is still valid
             token_validity = (self.mo_dir.session.refreshTime or 0) - time.time()
@@ -142,6 +144,7 @@ class CobraClient(object):
         self.mo_dir.logout()
 
     @_retry
+    # TODO counter/histogram?
     def commit(self, managed_objects):
         config_request = ConfigRequest()
 
@@ -154,16 +157,19 @@ class CobraClient(object):
         return self.mo_dir.commit(config_request)
 
     @_retry
+    # TODO counter/histogram?
     def lookupByDn(self, dn, **kwargs):
         """Simple wrapper for cobra lookupByDn with retry"""
         return self.mo_dir.lookupByDn(dn, **kwargs)
 
     @_retry
+    # TODO counter/histogram?
     def lookupByClass(self, dn, **kwargs):
         """Simple wrapper for cobra lookupByClass with retry"""
         return self.mo_dir.lookupByClass(dn, **kwargs)
 
     @_retry
+    # TODO counter/histogram?
     def query(self, dn, single=False, **kwargs):
         dnQ = DnQuery(dn)
         # allow passing a list for certain attributes

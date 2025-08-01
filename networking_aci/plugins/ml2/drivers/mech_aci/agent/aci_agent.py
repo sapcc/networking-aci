@@ -266,7 +266,6 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
     def loop_count_and_wait(self, start_time):
         # sleep till end of polling interval
         elapsed = time.time() - start_time
-        # XXX is this metric_network_syncloop?
         LOG.debug("CI Agent rpc_loop - iteration:%(iter_num)d "
                   "completed. Elapsed:%(elapsed).3f",
                   {'iter_num': self.iter_num,
@@ -287,6 +286,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         start = time.time()
 
         if self.sync_active:
+            # XXX this is the metric_network_syncloop
             while self._check_and_handle_signal():
                 # create a new context for each sync loop run
                 ctx = context.get_admin_context_without_session()
@@ -317,10 +317,12 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                         # Orphaned  - so network ids in ACI but not neutron
                         orphaned = []
+                        # TODO add counter?
                         for bd_name in bd_names:
                             if(bd_name not in neutron_network_ids and bd_name not in orphaned):
                                 orphaned.append(bd_name)
 
+                        # TODO add counter?
                         for epg_name in epg_names:
                             if(epg_name not in neutron_network_ids and epg_name not in orphaned):
                                 orphaned.append(epg_name)
@@ -353,9 +355,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                     network = self.agent_rpc.get_network(ctx, network_id)
                                     if not network:
                                         LOG.error("Failed to refetch data from Neutron for network %s", network_id)
-                                        self.metric_network_changed_during_syncloop.labels(sync_try=2).inc()
+                                        # TODO counter here
                                         continue
                                     if network_id in self._dirty_networks:
+                                        self.metric_network_changed_during_syncloop.labels(sync_try=2).inc()
                                         LOG.warning("Network %s was modified during refetching its data, "
                                                     "syncing it anyway", network_id)
 
