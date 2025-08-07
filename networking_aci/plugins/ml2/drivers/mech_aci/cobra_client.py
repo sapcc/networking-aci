@@ -29,6 +29,8 @@ from oslo_log import log
 import requests
 import requests.exceptions as rexc
 from requests.exceptions import SSLError
+from prometheus_client import Histogram, Counter
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 
 LOG = log.getLogger(__name__)
 CONF = cfg.CONF
@@ -41,14 +43,22 @@ RETRY_EXCEPTIONS = FALLBACK_EXCEPTIONS + (SSLError, CommitError, QueryError)
 requests.packages.urllib3.disable_warnings()
 _TOKEN_REFRESH_LOCK = threading.Lock()
 
+metric_cobra_client_num_retries = Counter('num_retries', 'Number of retries for cobra client calls',
+                                          namespace=aci_const.METRICS_NAMESPACE)
+metric_cobra_client_commit = Histogram('num_retries', 'Time spent in commit',
+                                       namespace=aci_const.METRICS_NAMESPACE)
+metric_cobra_client_lookup_by_dn= Histogram('num_retries', 'Time spent in lookupByDn',
+                                       namespace=aci_const.METRICS_NAMESPACE)
+metric_cobra_client_lookup_by_class= Histogram('num_retries', 'Time spent in lookupByClass',
+                                       namespace=aci_const.METRICS_NAMESPACE)
+metric_cobra_client_query= Histogram('num_retries', 'Time spent in query',
+                                       namespace=aci_const.METRICS_NAMESPACE)
 
 def _retry(func):
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         retry = kwargs.pop("retry", 0)
         max_retries = kwargs.pop("max_retries", 3)
-
-        ## XXX add counter
 
         try:
             # check if token is still valid
@@ -99,6 +109,7 @@ def _retry(func):
                         self.login()
                     LOG.debug("Releasing session refresh lock for login")
 
+                metric_cobra_client_num_retries.inc()
                 return wrapper(self, *args, retry=retry + 1, max_retries=max_retries, **kwargs)
             else:
                 LOG.exception("%s", msg)
@@ -144,7 +155,7 @@ class CobraClient(object):
         self.mo_dir.logout()
 
     @_retry
-    # TODO counter/histogram?
+    @metric_cobra_client_commit.time()
     def commit(self, managed_objects):
         config_request = ConfigRequest()
 
@@ -157,19 +168,19 @@ class CobraClient(object):
         return self.mo_dir.commit(config_request)
 
     @_retry
-    # TODO counter/histogram?
+    @metric_cobra_client_lookup_by_dn.time()
     def lookupByDn(self, dn, **kwargs):
         """Simple wrapper for cobra lookupByDn with retry"""
         return self.mo_dir.lookupByDn(dn, **kwargs)
 
     @_retry
-    # TODO counter/histogram?
+    @metric_cobra_client_lookup_by_class.time()
     def lookupByClass(self, dn, **kwargs):
         """Simple wrapper for cobra lookupByClass with retry"""
         return self.mo_dir.lookupByClass(dn, **kwargs)
 
     @_retry
-    # TODO counter/histogram?
+    @metric_cobra_client_query.time()
     def query(self, dn, single=False, **kwargs):
         dnQ = DnQuery(dn)
         # allow passing a list for certain attributes

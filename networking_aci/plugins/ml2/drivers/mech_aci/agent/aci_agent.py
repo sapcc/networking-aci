@@ -42,14 +42,8 @@ CONF = cfg.CONF
 class AciNeutronAgent(rpc_api.ACIRpcAPI):
     target = oslo_messaging.Target(version='1.4')
 
-    # FIXME: do I need buckets?
-    #   buckets=[round(20 + x ** 2) for x in range(12)] + [INF])
-
+    # setup all metrics
     metric_agent_syncloop = Histogram('agent_syncloop', 'Overall agent rpc_loop', namespace=aci_const.METRICS_NAMESPACE)
-
-    # TODO define what this one was meant to track
-    metric_network_syncloop = Histogram('network_syncloop', 'TODO description', namespace=aci_const.METRICS_NAMESPACE)
-
     metric_non_epg_syncloop = Histogram('non_epg_syncloop', 
                                         'Non epg syncloop  (includes sync_az_aware_subnet_routes and metric_sync_nullroutes)',
                                         namespace=aci_const.METRICS_NAMESPACE)
@@ -60,9 +54,16 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                        'Nullroute sync', 
                                        namespace=aci_const.METRICS_NAMESPACE)
 
+    metric_ophaned_bridge_domains = Counter('orphaned_bd', 'Counter of orphaned bridge domains',
+                                            namespace=aci_const.METRICS_NAMESPACE)
+    metric_ophaned_endpoint_group = Counter('orphaned_epg', 'Counter of orphaned endpoint groups',
+                                            namespace=aci_const.METRICS_NAMESPACE)
     metric_orphaned_epg_or_bd_deleted = Counter('orphaned_epg_or_bd_deleted',
                                                 'Counter of deleted orphaned EPG/BD',
                                                 namespace=aci_const.METRICS_NAMESPACE)
+    metric_network_failed_to_fetch_during_syncloop = Counter('network_failed_to_fetch_during_syncloop',
+                                                   'Counter of networks that failed to fetch during the sync loop',
+                                                   namespace=aci_const.METRICS_NAMESPACE)
     metric_network_changed_during_syncloop = Counter('network_changed_during_syncloop',
                                                      'Counter of networks changed during the sync loop',
                                                      namespace=aci_const.METRICS_NAMESPACE )
@@ -286,7 +287,6 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         start = time.time()
 
         if self.sync_active:
-            # XXX this is the metric_network_syncloop
             while self._check_and_handle_signal():
                 # create a new context for each sync loop run
                 ctx = context.get_admin_context_without_session()
@@ -317,15 +317,15 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
                         # Orphaned  - so network ids in ACI but not neutron
                         orphaned = []
-                        # TODO add counter?
                         for bd_name in bd_names:
                             if(bd_name not in neutron_network_ids and bd_name not in orphaned):
                                 orphaned.append(bd_name)
+                                self.metric_ophaned_bridge_domains.inc()
 
-                        # TODO add counter?
                         for epg_name in epg_names:
                             if(epg_name not in neutron_network_ids and epg_name not in orphaned):
                                 orphaned.append(epg_name)
+                                self.metric_ophaned_endpoint_group.inc()
 
                         LOG.info("EPG/BD check orphaned {}".format(orphaned))
 
@@ -355,7 +355,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                     network = self.agent_rpc.get_network(ctx, network_id)
                                     if not network:
                                         LOG.error("Failed to refetch data from Neutron for network %s", network_id)
-                                        # TODO counter here
+                                        self.metric_network_failed_to_fetch_during_syncloop.inc()
                                         continue
                                     if network_id in self._dirty_networks:
                                         self.metric_network_changed_during_syncloop.labels(sync_try=2).inc()

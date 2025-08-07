@@ -18,6 +18,7 @@ import netaddr
 from neutron_lib.api.definitions import availability_zone as az_def
 from oslo_config import cfg
 from oslo_log import log
+from prometheus_client import Histogram
 
 from networking_aci.plugins.ml2.drivers.mech_aci import cobra_client
 from networking_aci.plugins.ml2.drivers.mech_aci import common
@@ -37,6 +38,11 @@ PORT_SELECTOR_DN = 'uni/infra/accportprof-{}/hports-{}-typ-range'
 SUBJ_P_DN = 'uni/tn-common/subj-PL-AZ-{az}-{vrf}'
 MATCH_RULE_DN = 'uni/tn-common/subj-PL-AZ-{az}-{vrf}/dest-[{prefix}]'
 RSNODE_L3OUT_ATT_DN = 'uni/tn-{l3out_tenant}/out-{l3out_name}/lnodep-{l3out_name}/rsnodeL3OutAtt-[topology/{leaf_path}]'
+
+metric_cm_ensure_domain_and_epg= Histogram('num_retries', 'Time spent in commit',
+                                           namespace=aci_const.METRICS_NAMESPACE)
+metric_sync_network = Histogram('num_retries', 'Time spent in commit',
+                                namespace=aci_const.METRICS_NAMESPACE)
 
 
 class CobraManager(object):
@@ -91,8 +97,8 @@ class CobraManager(object):
         else:
             return "regular"  # trunk
 
+    @metric_cm_ensure_domain_and_epg.time()
     def ensure_domain_and_epg(self, context, network_id, external=False):
-        # TODO metrics 
         tenant = self.get_or_create_tenant(network_id)
         ep_retention_policy = None
 
@@ -468,32 +474,32 @@ class CobraManager(object):
         return self.tenant_manager.get_tenant_name(network_id)
 
     def sync_network(self, context, network):
-        # TODO add metric histogram with label per network
-        self.clean_subnets(network)
-        self.clean_physdoms(network)
-        self.clean_bindings(network)
-        self.ensure_domain_and_epg(context, network.get('id'), external=network.get('router:external'))
+        with metric_sync_network.labels(network=network['id']).time():
+            self.clean_subnets(network)
+            self.clean_physdoms(network)
+            self.clean_bindings(network)
+            self.ensure_domain_and_epg(context, network.get('id'), external=network.get('router:external'))
 
-        if CONF.ml2_aci.handle_all_l3_gateways and aci_const.CC_FABRIC_L3_GATEWAY_TAG not in network['tags']:
-            network_az = None
-            if network.get(az_def.AZ_HINTS):
-                network_az = network[az_def.AZ_HINTS][0]
+            if CONF.ml2_aci.handle_all_l3_gateways and aci_const.CC_FABRIC_L3_GATEWAY_TAG not in network['tags']:
+                network_az = None
+                if network.get(az_def.AZ_HINTS):
+                    network_az = network[az_def.AZ_HINTS][0]
 
-            for subnet in network.get('subnets'):
-                self.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'),
-                                   network_az)
+                for subnet in network.get('subnets'):
+                    self.create_subnet(subnet, network.get('router:external'), subnet.get('address_scope_name'),
+                                    network_az)
 
-        for binding in network.get('bindings'):
-            if binding.get('host_config'):
-                self.ensure_static_bindings_configured(network.get('id'),
-                                                       binding.get('host_config'),
-                                                       encap=binding.get('encap'))
-            else:
-                LOG.warning("No host configuration found in binding %s", binding)
+            for binding in network.get('bindings'):
+                if binding.get('host_config'):
+                    self.ensure_static_bindings_configured(network.get('id'),
+                                                        binding.get('host_config'),
+                                                        encap=binding.get('encap'))
+                else:
+                    LOG.warning("No host configuration found in binding %s", binding)
 
-        for fixed_binding in network.get('fixed_bindings'):
-            encap = fixed_binding.get('segment_id', None)
-            self.ensure_static_bindings_configured(network.get('id'), fixed_binding, encap=encap)
+            for fixed_binding in network.get('fixed_bindings'):
+                encap = fixed_binding.get('segment_id', None)
+                self.ensure_static_bindings_configured(network.get('id'), fixed_binding, encap=encap)
 
     def sync_az_aware_subnet_routes(self, subnets):
         az_vrfs = {}
