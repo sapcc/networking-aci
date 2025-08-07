@@ -26,6 +26,7 @@ from oslo_log import helpers as log_helpers
 from oslo_log import log as logging
 import oslo_messaging
 from oslo_service import loopingcall
+from prometheus_client import Histogram, Counter
 from stevedore import driver
 
 from networking_aci._i18n import _LI, _LE
@@ -40,6 +41,32 @@ CONF = cfg.CONF
 
 class AciNeutronAgent(rpc_api.ACIRpcAPI):
     target = oslo_messaging.Target(version='1.4')
+
+    # setup all metrics
+    metric_agent_syncloop = Histogram('agent_syncloop', 'Overall agent rpc_loop', namespace=aci_const.METRICS_NAMESPACE)
+    metric_non_epg_syncloop = Histogram('non_epg_syncloop', 
+                                        'Non epg syncloop  (includes sync_az_aware_subnet_routes and metric_sync_nullroutes)',
+                                        namespace=aci_const.METRICS_NAMESPACE)
+    metric_sync_az_aware_subnet_routes = Histogram('sync_az_aware_subnet_routes',
+                                                   'AZ aware subnet route sync', 
+                                                   namespace=aci_const.METRICS_NAMESPACE)
+    metric_sync_nullroutes = Histogram('sync_nullroutes',
+                                       'Nullroute sync', 
+                                       namespace=aci_const.METRICS_NAMESPACE)
+
+    metric_ophaned_bridge_domains = Counter('orphaned_bd', 'Counter of orphaned bridge domains',
+                                            namespace=aci_const.METRICS_NAMESPACE)
+    metric_ophaned_endpoint_group = Counter('orphaned_epg', 'Counter of orphaned endpoint groups',
+                                            namespace=aci_const.METRICS_NAMESPACE)
+    metric_orphaned_epg_or_bd_deleted = Counter('orphaned_epg_or_bd_deleted',
+                                                'Counter of deleted orphaned EPG/BD',
+                                                namespace=aci_const.METRICS_NAMESPACE)
+    metric_network_failed_to_fetch_during_syncloop = Counter('network_failed_to_fetch_during_syncloop',
+                                                   'Counter of networks that failed to fetch during the sync loop',
+                                                   namespace=aci_const.METRICS_NAMESPACE)
+    metric_network_changed_during_syncloop = Counter('network_changed_during_syncloop',
+                                                     'Counter of networks changed during the sync loop',
+                                                     namespace=aci_const.METRICS_NAMESPACE )
 
     def __init__(self,
                  minimize_polling=False,
@@ -198,6 +225,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
 
     # End Agent mechanics
 
+    @metric_non_epg_syncloop.time()
     def _run_non_epg_syncloop(self):
         ctx = context.get_admin_context_without_session()
         LOG.info("Starting periodic non-epg syncloop")
@@ -220,6 +248,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
             LOG.info("Nullroute syncloop is currently disabled")
         LOG.info("Periodic non-epg syncloop done")
 
+    @metric_sync_az_aware_subnet_routes.time()
     def sync_az_aware_subnet_routes(self, context):
         LOG.info("Starting AZ aware subnet route sync")
         subnets = self.agent_rpc.get_az_aware_subnet_routes(context)
@@ -227,6 +256,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.aci_manager.sync_az_aware_subnet_routes(subnets)
         LOG.info("AZ aware subnet route sync done")
 
+    @metric_sync_nullroutes.time()
     def sync_nullroutes(self, context):
         LOG.info("Starting nullroute sync")
         data = self.agent_rpc.get_leaf_nullroutes(context)
@@ -290,10 +320,12 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                         for bd_name in bd_names:
                             if(bd_name not in neutron_network_ids and bd_name not in orphaned):
                                 orphaned.append(bd_name)
+                                self.metric_ophaned_bridge_domains.inc()
 
                         for epg_name in epg_names:
                             if(epg_name not in neutron_network_ids and epg_name not in orphaned):
                                 orphaned.append(epg_name)
+                                self.metric_ophaned_endpoint_group.inc()
 
                         LOG.info("EPG/BD check orphaned {}".format(orphaned))
 
@@ -302,6 +334,7 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                             for network_id in orphaned:
                                 LOG.info("Deleting EPG and BD for network %s", network_id)
                                 self.aci_manager.delete_domain_and_epg(network_id)
+                                self.metric_orphaned_epg_or_bd_deleted.inc()
 
                         self._dirty_networks.clear()
                         neutron_networks = self.agent_rpc.get_networks(ctx, limit=str(self.sync_batch_size),
@@ -318,11 +351,14 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                     LOG.info("Network %s was modified while syncloop run, refetching data",
                                              network_id)
                                     self._dirty_networks.remove(network_id)
+                                    self.metric_network_changed_during_syncloop.labels(sync_try=1).inc()
                                     network = self.agent_rpc.get_network(ctx, network_id)
                                     if not network:
                                         LOG.error("Failed to refetch data from Neutron for network %s", network_id)
+                                        self.metric_network_failed_to_fetch_during_syncloop.inc()
                                         continue
                                     if network_id in self._dirty_networks:
+                                        self.metric_network_changed_during_syncloop.labels(sync_try=2).inc()
                                         LOG.warning("Network %s was modified during refetching its data, "
                                                     "syncing it anyway", network_id)
 
@@ -331,8 +367,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                 LOG.exception("Error while attempting to apply configuration to network %s",
                                               network['id'])
 
-                        LOG.info("Scan and fix %s networks in %s seconds", len(neutron_networks), time.time() - start)
                         self.sync_marker = neutron_networks[-1]['id']
+                        time_taken = time.time() - start
+                        LOG.info("Scan and fix %s networks in %s seconds", len(neutron_networks), time_taken)
+                        self.metric_agent_syncloop.observe(time_taken)
 
                 except Exception:
                     LOG.exception(_LE("Error while in rpc loop"))

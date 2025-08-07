@@ -21,6 +21,7 @@ from neutron.conf.agent import common as config
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_service import eventlet_backdoor
+from prometheus_client import start_http_server
 
 
 LOG = logging.getLogger(__name__)
@@ -31,11 +32,19 @@ def register_options():
     config.register_agent_state_opts_helper(cfg.CONF)
 
 
+
+def start_prometheus():
+    if not cfg.CONF.ml2_aci.prometheus_enabled:
+        return
+    start_http_server(cfg.CONF.ml2_aci.prometheus_listen_port,
+                      cfg.CONF.ml2_aci.prometheus_listen_address)
+
 def main():
     register_options()
     common_config.init(sys.argv[1:])
     config.setup_logging()
     eventlet_backdoor.initialize_if_enabled(cfg.CONF)
+    start_prometheus()
     agent = aci_agent.AciNeutronAgent()
 
     # Start everything.
