@@ -112,7 +112,8 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
     @log_helpers.log_method_call
     def create_network(self, context, network, external=False):
         self._dirty_networks.mark_dirty(network['id'])
-        self.aci_manager.ensure_domain_and_epg(context, network['id'], external=external)
+        self.aci_manager.ensure_domain_and_epg(context, network['id'], external=external,
+                                               remote_vni=network.get('vxlan_vni'))
 
     @log_helpers.log_method_call
     def delete_network(self, context, network):

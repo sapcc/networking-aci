@@ -129,6 +129,11 @@ aci_opts = [
     cfg.BoolOpt("subnet_subnetpool_az_check_enabled", default=True,
                 help="Check if a subnet's network az hint matches the subnetpool's az hint (tag) on "
                      "creation of an external subnet"),
+    cfg.BoolOpt('bgw_feature_enabled', default=False,
+                help='Configure BD VXLAN stretch via border gateways (BGWs) by creating fvVxGwFabrics objects, '
+                     'available on ACI >= 6.1'),
+    cfg.StrOpt('bgw_set_name', default='ACI-BGW-SET',
+               help='Name of the BGW set to use for configuring the BD VXLAN stretch'),
 ]
 
 hostgroup_opts = [
