@@ -43,6 +43,16 @@ class CobraManager(object):
     def __init__(self, agent_plugin, tenant_manager):
         # Connect to the APIC
 
+        self.bgw_feature_enabled = False
+        if CONF.ml2_aci.bgw_feature_enabled:
+            # check if our SDK supports this
+            try:
+                fv.VxGwFabrics
+                self.bgw_feature_enabled = True
+            except AttributeError as e:
+                LOG.error("BGW feature enabled but cobra sdk does not support it - do you need to update it? "
+                          "Error was: %s", e)
+
         self.agent_plugin = agent_plugin
         self.apic_application_profile = CONF.ml2_aci.apic_application_profile
         self.tenant_default_vrf = CONF.ml2_aci.tenant_default_vrf
@@ -91,7 +101,7 @@ class CobraManager(object):
         else:
             return "regular"  # trunk
 
-    def ensure_domain_and_epg(self, context, network_id, external=False):
+    def ensure_domain_and_epg(self, context, network_id, external=False, remote_vni=None):
         tenant = self.get_or_create_tenant(network_id)
         ep_retention_policy = None
 
@@ -136,6 +146,14 @@ class CobraManager(object):
             # make sure we have an RsCtx associated to the BD for internal networks, even if we don't have a subnet
             rsctx = fv.RsCtx(bd, self.tenant_default_vrf, tnFvCtxName=self.tenant_default_vrf)
             bd_objs.append(rsctx)
+
+        if self.bgw_feature_enabled:
+            if remote_vni:
+                vxgwfabric = fv.VxGwFabrics(bd, remoteVni=remote_vni)
+                consbgwset = fv.ConsBgwSet(vxgwfabric, name=CONF.ml2_aci.bgw_set_name)
+                bd_objs.extend([vxgwfabric, consbgwset])
+            else:
+                LOG.error("BGW feature enabled, but no VNI found for network %s", network_id)
 
         # We have to make seperate config requests because cobra can't
         # handle MOs with different root contexts
@@ -470,7 +488,8 @@ class CobraManager(object):
         self.clean_subnets(network)
         self.clean_physdoms(network)
         self.clean_bindings(network)
-        self.ensure_domain_and_epg(context, network.get('id'), external=network.get('router:external'))
+        self.ensure_domain_and_epg(context, network.get('id'), external=network.get('router:external'),
+                                   remote_vni=network.get('vxlan_vni'))
 
         if CONF.ml2_aci.handle_all_l3_gateways and aci_const.CC_FABRIC_L3_GATEWAY_TAG not in network['tags']:
             network_az = None

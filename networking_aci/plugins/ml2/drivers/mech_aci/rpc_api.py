@@ -119,6 +119,7 @@ class AgentRpcCallback(object):
             'subnets': [],
             'bindings': [],
             'fixed_bindings': [],
+            'vxlan_vni': None,
         }
 
         # fixed bindings
@@ -155,6 +156,9 @@ class AgentRpcCallback(object):
         segment_dict = {}
         for segment in segments:
             segment_dict[segment.get('id')] = segment
+
+            if segment.get('network_type') == 'vxlan' and segment.get('physical_network') is None:
+                result['vxlan_vni'] = segment.get('segmentation_id')
 
         processed_hostgroups = []
         transit_hgs = ACI_CONFIG.get_transit_hostgroups()
