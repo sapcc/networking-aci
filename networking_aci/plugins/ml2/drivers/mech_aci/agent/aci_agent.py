@@ -29,7 +29,7 @@ from oslo_service import loopingcall
 from stevedore import driver
 
 from networking_aci._i18n import _LI, _LE
-from networking_aci.plugins.ml2.drivers.mech_aci import cobra_manager
+from networking_aci.plugins.ml2.drivers.mech_aci.agent import cobra_manager
 from networking_aci.plugins.ml2.drivers.mech_aci.common import LockedDirtyCache
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api

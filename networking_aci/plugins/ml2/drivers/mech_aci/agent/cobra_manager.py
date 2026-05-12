@@ -19,7 +19,7 @@ from neutron_lib.api.definitions import availability_zone as az_def
 from oslo_config import cfg
 from oslo_log import log
 
-from networking_aci.plugins.ml2.drivers.mech_aci import cobra_client
+from networking_aci.plugins.ml2.drivers.mech_aci.agent import cobra_client
 from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
