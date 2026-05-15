@@ -12,10 +12,13 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import time
+
 from cobra.model import fv, fvns, infra, ip, phys, rtctrl
 import cobra.modelimpl.l3ext.out
 import netaddr
 from neutron_lib.api.definitions import availability_zone as az_def
+from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import log
 
@@ -297,20 +300,30 @@ class CobraManager(object):
             LOG.info("No port selectors configured for hostgroup %s %s, skipping hostgroup mode configuration",
                      host_config['name'], source)
             return
-        if host_config['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
-            if not self.ensure_baremetal_entities(host_config['pc_policy_group'],
-                                                  host_config['baremetal_resource_name'],
-                                                  host_config['baremetal_pc_policy_group']):
-                LOG.error("Could not create baremetal entities for hostgroup %s %s",
-                          host_config['name'], source)
 
-        port_sel_entities = self._gen_port_selector_entities(host_config)
-        if not port_sel_entities:
-            LOG.error("No port selector entity configuration could be generated for hostgroup %s %s"
-                      " - are there configuration entities missing?",
-                      host_config['name'], source)
-            return
-        self.apic.commit(port_sel_entities)
+        lock_name = f"bm-hg-mode-{host_config['name']}"
+        lock_time_start = time.monotonic()
+        LOG.info("Setting hostgroup mode for %s to %s", host_config['name'], host_config['hostgroup_mode'])
+        with lockutils.lock(lock_name, fair=True):
+            lock_time_acquired = time.monotonic()
+            if lock_time_acquired - lock_time_start >= 10.0:
+                LOG.warning("Needed to wait %.2fs for lock %s in ensure_hostgroup_mode_config()",
+                            lock_time_acquired - lock_time_start, lock_name)
+            if host_config['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
+                if not self.ensure_baremetal_entities(host_config['pc_policy_group'],
+                                                      host_config['baremetal_resource_name'],
+                                                      host_config['baremetal_pc_policy_group']):
+                    LOG.error("Could not create baremetal entities for hostgroup %s %s",
+                              host_config['name'], source)
+
+            port_sel_entities = self._gen_port_selector_entities(host_config)
+            if not port_sel_entities:
+                LOG.error("No port selector entity configuration could be generated for hostgroup %s %s"
+                          " - are there configuration entities missing?",
+                          host_config['name'], source)
+                return
+            self.apic.commit(port_sel_entities)
+        LOG.debug("Lock %s released after %.2f", lock_name, time.monotonic() - lock_time_acquired)
 
     def create_subnet(self, subnet, external, address_scope_name, network_az):
         self._configure_subnet(subnet, external=external, address_scope_name=address_scope_name, network_az=network_az,
