@@ -315,6 +315,7 @@ class CobraManager(object):
                                                       host_config['baremetal_pc_policy_group']):
                     LOG.error("Could not create baremetal entities for hostgroup %s %s",
                               host_config['name'], source)
+                    return
 
             port_sel_entities = self._gen_port_selector_entities(host_config)
             if not port_sel_entities:
