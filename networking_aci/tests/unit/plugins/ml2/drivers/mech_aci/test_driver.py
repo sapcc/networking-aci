@@ -31,7 +31,8 @@ class NetworkingAciMechanismDriverSubnetPoolTest(base.NetworkingAciMechanismDriv
     def test_create_subnet_az_hint_matches(self):
         net_kwargs = {'arg_list': (extnet_api.EXTERNAL,), extnet_api.EXTERNAL: True}
         with self.network(**net_kwargs, as_admin=True) as network:
-            with self.subnetpool(["1.1.0.0/16", "1.2.0.0/24"], name="foo", tenant_id="foo", admin=True) as snp:
+            with self.subnetpool(["1.1.0.0/16", "1.2.0.0/24"], address_scope_id=self._address_scope['id'],
+                                 name="foo", tenant_id="foo", admin=True) as snp:
                 with self.subnet(network=network, cidr="1.1.1.0/24", gateway_ip="1.1.1.1",
                                  subnetpool_id=snp['subnetpool']['id'], as_admin=True) as subnet:
                     self.assertIsNotNone(subnet)
@@ -78,6 +79,36 @@ class NetworkingAciMechanismDriverSubnetPoolTest(base.NetworkingAciMechanismDriv
         with self.network(availability_zone_hints=["qa-de-1a"], **net_kwargs, as_admin=True) as network:
             with self.subnetpool(["1.1.0.0/16", "1.2.0.0/24"], address_scope_id=self._address_scope['id'], name="foo",
                                  tenant_id="foo", admin=True) as snp:
+                with self.subnet(network=network, cidr="1.1.1.0/24", gateway_ip="1.1.1.1",
+                                 subnetpool_id=snp['subnetpool']['id'], as_admin=True) as subnet:
+                    self.assertIsNotNone(subnet)
+
+    def test_create_external_subnet_no_subnetpool_fails(self):
+        net_kwargs = {'arg_list': (extnet_api.EXTERNAL,), extnet_api.EXTERNAL: True}
+        with self.network(**net_kwargs, as_admin=True) as network:
+            resp = self._create_subnet(self.fmt, cidr="1.1.1.0/24", gateway_ip="1.1.1.1",
+                                       name="foo",
+                                       net_id=network['network']['id'], tenant_id=network['network']['tenant_id'],
+                                       as_admin=True)
+            self.assertEqual(400, resp.status_code)
+            self.assertEqual("ExternalSubnetRequiresAddressScopeError", resp.json['NeutronError']['type'])
+
+    def test_create_external_subnet_no_address_scope_fails(self):
+        net_kwargs = {'arg_list': (extnet_api.EXTERNAL,), extnet_api.EXTERNAL: True}
+        with self.network(**net_kwargs, as_admin=True) as network:
+            with self.subnetpool(["1.1.0.0/16", "1.2.0.0/24"], name="foo", tenant_id="foo", admin=True) as snp:
+                resp = self._create_subnet(self.fmt, cidr="1.1.1.0/24", gateway_ip="1.1.1.1",
+                                           name="foo",
+                                           net_id=network['network']['id'], tenant_id=network['network']['tenant_id'],
+                                           subnetpool_id=snp['subnetpool']['id'], as_admin=True)
+                self.assertEqual(400, resp.status_code)
+                self.assertEqual("ExternalSubnetRequiresAddressScopeError", resp.json['NeutronError']['type'])
+
+    def test_create_external_subnet_address_scope_check_disabled_passes(self):
+        cfg.CONF.set_override('external_subnet_requires_address_scope_enabled', False, group='ml2_aci')
+        net_kwargs = {'arg_list': (extnet_api.EXTERNAL,), extnet_api.EXTERNAL: True}
+        with self.network(**net_kwargs, as_admin=True) as network:
+            with self.subnetpool(["1.1.0.0/16", "1.2.0.0/24"], name="foo", tenant_id="foo", admin=True) as snp:
                 with self.subnet(network=network, cidr="1.1.1.0/24", gateway_ip="1.1.1.1",
                                  subnetpool_id=snp['subnetpool']['id'], as_admin=True) as subnet:
                     self.assertIsNotNone(subnet)

@@ -450,7 +450,20 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         cannot block.  Raising an exception will result in a rollback
         of the current transaction.
         """
+        self._check_external_subnet_requires_address_scope(context)
         self._check_subnet_and_subnetpool_az_match(context)
+
+    def _check_external_subnet_requires_address_scope(self, context):
+        if not CONF.ml2_aci.external_subnet_requires_address_scope_enabled:
+            return
+
+        net = context.network.current
+        if not net[extnet_def.EXTERNAL]:
+            return
+
+        snp_id = context.current['subnetpool_id']
+        if snp_id is None or self.db.get_address_scope_name(context._plugin_context, snp_id) is None:
+            raise aci_exc.ExternalSubnetRequiresAddressScopeError(network_id=net['id'], subnetpool_id=snp_id)
 
     def _check_subnet_and_subnetpool_az_match(self, context):
         if not CONF.ml2_aci.subnet_subnetpool_az_check_enabled:

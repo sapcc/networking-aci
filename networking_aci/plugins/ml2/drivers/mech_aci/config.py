@@ -129,6 +129,8 @@ aci_opts = [
     cfg.BoolOpt("subnet_subnetpool_az_check_enabled", default=True,
                 help="Check if a subnet's network az hint matches the subnetpool's az hint (tag) on "
                      "creation of an external subnet"),
+    cfg.BoolOpt("external_subnet_requires_address_scope_enabled", default=True,
+                help="Require subnets on external networks to have a subnetpool with an address scope"),
     cfg.BoolOpt('bgw_feature_enabled', default=False,
                 help='Configure BD VXLAN stretch via border gateways (BGWs) by creating fvVxGwFabrics objects, '
                      'available on ACI >= 6.1'),
