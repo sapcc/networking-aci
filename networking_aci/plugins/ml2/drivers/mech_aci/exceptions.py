@@ -84,3 +84,8 @@ class TransitBindingProhibited(exceptions.BadRequest):
 class SubnetSubnetPoolAZAffinityError(exceptions.BadRequest):
     message = ("The subnet's network %(network_id)s has AZ hint %(net_az_hint)s, "
                "the subnet's subnetpool %(subnetpool_id)s has AZ %(subnetpool_az)s set, which do not match")
+
+
+class ExternalSubnetRequiresAddressScopeError(exceptions.BadRequest):
+    message = ("Subnet on external network %(network_id)s must use a subnetpool with an address scope, "
+               "but subnetpool %(subnetpool_id)s has no address scope set")
