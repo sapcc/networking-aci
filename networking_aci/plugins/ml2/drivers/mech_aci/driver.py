@@ -470,10 +470,13 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             return
 
         # check if a subnet's subnetpool and a subnet's network are in the same AZ
-        # network needs to be external, subnet needs to have a subnetpool
         snp_id = context.current['subnetpool_id']
         net = context.network.current
-        if snp_id is None or not net[extnet_def.EXTERNAL]:
+        if snp_id is None:
+            return
+
+        # check external networks and if configured also internal networks
+        if not (net[extnet_def.EXTERNAL] or CONF.ml2_aci.subnet_subnetpool_az_check_internal_enabled):
             return
 
         # network az hint must match subnetpool az tag
