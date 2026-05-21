@@ -128,7 +128,10 @@ aci_opts = [
                 help="Enable AZ aware subnet routes sync"),
     cfg.BoolOpt("subnet_subnetpool_az_check_enabled", default=True,
                 help="Check if a subnet's network az hint matches the subnetpool's az hint (tag) on "
-                     "creation of an external subnet"),
+                     "creation of a subnet. Only subnetpools with an address scope are checked."),
+    cfg.BoolOpt("subnet_subnetpool_az_check_internal_enabled", default=True,
+                help="Extend the subnet/subnetpool AZ check to internal networks. "
+                     "Has no effect if subnet_subnetpool_az_check_enabled is False."),
     cfg.BoolOpt("external_subnet_requires_address_scope_enabled", default=True,
                 help="Require subnets on external networks to have a subnetpool with an address scope"),
     cfg.BoolOpt('bgw_feature_enabled', default=False,
