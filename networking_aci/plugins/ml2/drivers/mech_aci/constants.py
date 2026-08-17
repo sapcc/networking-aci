@@ -29,3 +29,4 @@ CC_FABRIC_NET_GW = 'cc-fabric-network-gateway'
 AZ_TAG_PREFIX = 'availability-zone::'
 
 CC_FABRIC_L3_GATEWAY_TAG = 'gateway-host::cc-fabric'
+SNP_EXT_NET_ADMIN_ONLY = 'ext-net-admin-only'

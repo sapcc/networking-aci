@@ -89,3 +89,8 @@ class SubnetSubnetPoolAZAffinityError(exceptions.BadRequest):
 class ExternalSubnetRequiresAddressScopeError(exceptions.BadRequest):
     message = ("Subnet on external network %(network_id)s must use a subnetpool with an address scope, "
                "but subnetpool %(subnetpool_id)s has no address scope set")
+
+
+class SubnetPoolExternalNetworkForAdminsOnlyError(exceptions.BadRequest):
+    message = ("Subnet pool %(subnetpool_id)s cannot be used by non-admin users as a pool for "
+               "subnets of external networks (disallowed by tag %(subnetpool_tag)s)")
