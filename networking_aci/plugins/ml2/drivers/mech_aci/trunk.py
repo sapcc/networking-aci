@@ -1,7 +1,6 @@
 import logging
 
 from neutron_lib.callbacks import events, registry, resources
-from neutron_lib import constants as n_const
 from neutron_lib.plugins import directory
 from neutron_lib.exceptions import NeutronException
 from neutron_lib.api.definitions import port as p_api
@@ -180,14 +179,13 @@ class ACITrunkDriver(base.DriverBase):
                     },
                 }
             else:
+                # NOTE(seba): do not set VNIC type, neutron will refuse the port update for a bound port
                 port_data = {
                     p_api.RESOURCE_NAME: {
                         portbindings.HOST_ID: None,
-                        portbindings.VNIC_TYPE: None,
                         portbindings.PROFILE: None,
                         'device_owner': '',
                         'device_id': '',
-                        'status': n_const.PORT_STATUS_DOWN,
                     },
                 }
             self.core_plugin.update_port(context, subport.port_id, port_data)
