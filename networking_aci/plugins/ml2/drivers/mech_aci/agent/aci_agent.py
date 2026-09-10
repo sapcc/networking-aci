@@ -80,9 +80,9 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         self.aci_manager = cobra_manager.CobraManager(self.agent_rpc, self.tenant_manager)
         self.connection.consume_in_threads()
 
-        non_epg_syncloop = loopingcall.FixedIntervalLoopingCall(self._run_non_epg_syncloop)
-        non_epg_syncloop.start(interval=CONF.ml2_aci.non_epg_syncloop_interval,
-                               stop_on_exception=False)
+        self._non_epg_syncloop = loopingcall.FixedIntervalLoopingCall(self._run_non_epg_syncloop)
+        self._non_epg_syncloop.start(interval=CONF.ml2_aci.non_epg_syncloop_interval,
+                                     stop_on_exception=False)
 
     # Start RPC callbacks
 
@@ -174,8 +174,8 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                                                      start_listening=False)
 
         report_interval = 30  # self.conf.AGENT.report_interval
-        heartbeat = loopingcall.FixedIntervalLoopingCall(self._report_state)
-        heartbeat.start(interval=report_interval, stop_on_exception=False)
+        self._heartbeat = loopingcall.FixedIntervalLoopingCall(self._report_state)
+        self._heartbeat.start(interval=report_interval, stop_on_exception=False)
 
     def _report_state(self):
         ctx = context.get_admin_context_without_session()
