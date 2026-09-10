@@ -48,6 +48,15 @@ class AciNeutronAgentTest(base.BaseTestCase):
         self.aci_agent.polling_interval = 0
         utils.setup_aci_config(cfg)
 
+    def tearDown(self):
+        # The agent starts background looping calls in its constructor; stop
+        # them so their worker threads don't leak and hang the test process.
+        for loop_attr in ('_heartbeat', '_non_epg_syncloop'):
+            loop = getattr(self.aci_agent, loop_attr, None)
+            if loop is not None:
+                loop.stop()
+        super(AciNeutronAgentTest, self).tearDown()
+
     def test_rpc_loop_race_condition(self):
         self.aci_agent._check_and_handle_signal = mock.Mock(side_effect=[True, False, False])
         self.aci_agent.agent_rpc.get_networks = mock.Mock(return_value=[])
