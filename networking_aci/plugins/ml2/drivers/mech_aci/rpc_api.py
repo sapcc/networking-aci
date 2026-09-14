@@ -164,7 +164,8 @@ class AgentRpcCallback(object):
         transit_hgs = ACI_CONFIG.get_transit_hostgroups()
         host_segments = self.db.get_hosts_on_network(context, network_id, level=1, with_segment=True,
                                                      transit_hostgroups=transit_hgs)
-        for host, segment_id in host_segments:
+        for host, host_data in host_segments.items():
+            segment_id = host_data['segment_id']
             hostgroup_name = ACI_CONFIG.get_hostgroup_name_by_host(host)
             if not hostgroup_name or hostgroup_name in processed_hostgroups:
                 continue
