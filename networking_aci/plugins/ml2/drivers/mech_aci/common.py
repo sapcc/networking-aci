@@ -145,13 +145,12 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         if level is not None:
             query = query.filter(ml2_models.PortBindingLevel.level == level)
 
-        hosts = set()
+        hosts = {}
         for entry in query.all():
             host = get_host_from_profile(entry.profile, entry.host)
+            hosts[host] = {}
             if with_segment:
-                hosts.add((host, entry.segment_id))
-            else:
-                hosts.add(host)
+                hosts[host]['segment_id'] = entry.segment_id
 
         # find all segments in this network that belong to a transit (unbound segments)
         if transit_hostgroups:
@@ -165,10 +164,10 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 for hg in transit_hostgroups:
                     if entry.physical_network == hg['physical_network']:
                         break
+                host = hg['hosts'][0]
+                hosts[host] = {}
                 if with_segment:
-                    hosts.add((hg['hosts'][0], entry.id))
-                else:
-                    hosts.add(hg['hosts'][0])
+                    hosts[host]['segment_id'] = entry.id
 
         return hosts
 
