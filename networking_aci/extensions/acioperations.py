@@ -17,7 +17,7 @@ import functools
 from neutron.api import extensions
 from neutron.api.v2.resource import Resource
 from neutron import policy
-from neutron import wsgi
+from neutron.api import wsgi
 from neutron_lib.api import extensions as api_extensions
 from neutron_lib.api import faults
 from neutron_lib.plugins import directory
