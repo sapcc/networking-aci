@@ -65,6 +65,11 @@ class TrunkSegmentIdAlreadyInUse(exceptions.NeutronException):
                "cannot repurpose it")
 
 
+class TrunkBaremetalV2WrongVlanUsed(exceptions.BadRequest):
+    message = ("Host %(host)s is in baremetal v2 mode, vlan IDs are autoallocated. Please specify vlan id 1 for "
+               "each subport you are adding (offending port: %(port_id)s)")
+
+
 class HostAlreadyHasAccessBinding(exceptions.NeutronException):
     message = ("Host %(host)s already has existing access binding with segmentation id %(segmentation_id)s "
                "on segment %(segment_id)s")

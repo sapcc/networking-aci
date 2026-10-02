@@ -382,7 +382,7 @@ class ACIConfig:
 
         for child_hg in hg['child_hostgroups']:
             hostgroup_mode = hostgroup_modes.get(child_hg)
-            if hostgroup_mode == aci_const.MODE_BAREMETAL:
+            if hostgroup_mode in (aci_const.MODE_BAREMETAL, aci_const.MODE_BAREMETAL_V2):
                 # remove bindings for hostgroups in baremetal mode
                 hg['bindings'] = list(set(hg['bindings']) - set(self.hostgroups[child_hg]['bindings']))
             elif hostgroup_mode == aci_const.MODE_INFRA:
@@ -409,7 +409,7 @@ class ACIConfig:
             # add hostgroup_mode, copy parent physnet/segment values for infra mode
             hg_mode = self.db.get_hostgroup_mode(context, name)
             hg['hostgroup_mode'] = hg_mode
-            if hg_mode == aci_const.MODE_INFRA:
+            if hg_mode in (aci_const.MODE_INFRA, aci_const.MODE_BAREMETAL_V2):
                 far_hg = hg['parent_hostgroup']
                 for key in 'physical_network', 'segment_type', 'segment_range', 'physical_domain':
                     hg[key] = self.hostgroups[far_hg][key]
