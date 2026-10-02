@@ -153,6 +153,10 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
         LOG.info("Data fetched, executing sync for network %s", network_id)
         return self.aci_manager.sync_network(context, network)
 
+    @log_helpers.log_method_call
+    def get_epg_dns_used_by_ifaces(self, context, iface_dns):
+        return self.aci_manager.get_epg_dns_used_by_ifaces(iface_dns)
+
     # End RPC callbacks
 
     # Start Agent mechanics

@@ -116,7 +116,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             self._bind_port_hierarchical(context, port, hostgroup_name, hostgroup)
         elif hostgroup['finalize_binding'] or \
                 (hostgroup['direct_mode'] and
-                 hostgroup['hostgroup_mode'] in (aci_const.MODE_BAREMETAL, aci_const.MODE_INFRA)):
+                 hostgroup['hostgroup_mode'] in (aci_const.MODE_BAREMETAL, aci_const.MODE_INFRA,
+                                                 aci_const.MODE_BAREMETAL_V2)):
             # direct binding for a) baremetal on aci and b) infra mode (2nd level)
             self._bind_port_direct(context, port, hostgroup_name, hostgroup)
 
@@ -143,10 +144,13 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         network = context.network.current
         segment_type = hostgroup.get('segment_type', 'vlan')
         if hostgroup.get('hostgroup_mode') != aci_const.MODE_BAREMETAL:
-            # VM mode
+            # VM / baremetal v2 mode
             allocation = self.allocations_manager.allocate_segment(network, segment_physnet, level, hostgroup)
             segmentation_id = allocation.segmentation_id
             segment_id = allocation.segment_id
+            if hostgroup.get('hostgroup_mode') == aci_const.MODE_BAREMETAL_V2:
+                if hostgroup.get('has_trunk_port'):
+                    hostgroup['force_trunk'] = True
         else:
             # baremetal objects use a different physnet and gets allocated to its own segment
             # check that no baremetal-on-aci port from another project is in this network
@@ -209,10 +213,24 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                 if not hostgroup['finalize_binding']:
                     # annotate baremetal resource name for baremetal group (if necessary)
                     network = context.network.current
-                    ACI_CONFIG.annotate_baremetal_info(context._plugin_context, hostgroup, network['id'],
-                                                       override_project_id=port['project_id'])
 
-                    if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and \
+                    if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
+                        ACI_CONFIG.annotate_baremetal_info(context._plugin_context, hostgroup, network['id'],
+                                                           override_project_id=port['project_id'])
+
+                    if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL_V2 and \
+                            aci_const.TRUNK_PROFILE in port['binding:profile']:
+                        # for bmv2 we dictate the trunk id based on segment id
+                        LOG.debug("Updating segmentation id of sub port %s to %s for baremetal v2",
+                                  port['id'], segment['segmentation_id'])
+                        self.db.update_sub_port_segmentation_id(context._plugin_context,
+                                                                port['id'], segment['segmentation_id'])
+                        port['binding:profile'][aci_const.TRUNK_PROFILE]['segmentation_id'] = segment['segmentation_id']
+                        self.db.update_port_binding_profile(context._plugin_context, port['id'],
+                                                            port['binding:profile'])
+
+
+                    if hostgroup['hostgroup_mode'] in (aci_const.MODE_BAREMETAL, aci_const.MODE_BAREMETAL_V2) and \
                             aci_const.TRUNK_PROFILE in port['binding:profile']:
                         port_type_str = "trunk port"
                     else:
@@ -413,7 +431,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             if orig_hostgroup and \
                     (curr_hostgroup is None or (curr_hostgroup and orig_hostgroup_name != curr_hostgroup_name)):
                 if CONF.ml2_aci.handle_port_update_for_non_baremetal or \
-                        orig_hostgroup['direct_mode'] and orig_hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
+                        orig_hostgroup['direct_mode'] and \
+                        orig_hostgroup['hostgroup_mode'] in (aci_const.MODE_BAREMETAL, aci_const.MODE_BAREMETAL_V2):
                     # handle port update
                     LOG.info('Calling cleanup for port %s (hostgroup transition from "%s" to "%s")',
                              context.current['id'], orig_hostgroup_name, curr_hostgroup_name)
@@ -544,9 +563,8 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
             if any(host in hosts_on_network for host in hostgroup['hosts']):
                 return
 
-            # if this is a infra-mode binding make sure no VM port is bound before removing it
-            # (this should never be the case)
-            if hostgroup['hostgroup_mode'] == aci_const.MODE_INFRA:
+            # if this is a infra-mode or baremetal v2 binding make sure no VM port is bound before removing it
+            if hostgroup['hostgroup_mode'] in (aci_const.MODE_INFRA, aci_const.MODE_BAREMETAL_V2):
                 parent_hostgroup = ACI_CONFIG.get_hostgroup(context, hostgroup['parent_hostgroup'])
                 if any(host in hosts_on_network for host in parent_hostgroup['hosts']):
                     # parent group has still a binding, we might have set one of the VPCs to access mode

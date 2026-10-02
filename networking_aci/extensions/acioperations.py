@@ -166,10 +166,14 @@ class HostgroupModeController(wsgi.Controller):
     @check_cloud_admin
     def update(self, request, **kwargs):
         hostgroup_name = kwargs.pop('id')
-        new_mode = kwargs.get("body", {}).get("mode")
-        if new_mode not in (aci_const.MODE_INFRA, aci_const.MODE_BAREMETAL):
-            raise web_exc.HTTPBadRequest("Specify a mode that is either {} or {} (given mode was '{}')"
-                                         .format(aci_const.MODE_INFRA, aci_const.MODE_BAREMETAL, new_mode))
+        req_body = kwargs.get("body", {})
+        new_mode = req_body.get("mode")
+        skip_bmv2_vpc_check = req_body.get("skip_baremetal_v2_vpc_safety_check", False)
+
+        if new_mode not in (aci_const.MODE_INFRA, aci_const.MODE_BAREMETAL, aci_const.MODE_BAREMETAL_V2):
+            raise web_exc.HTTPBadRequest("Specify a mode that is either {}, {} or {} (given mode was '{}')"
+                                         .format(aci_const.MODE_INFRA, aci_const.MODE_BAREMETAL,
+                                                 aci_const.MODE_BAREMETAL_V2, new_mode))
 
         curr_mode = self._get_mode(request.context, hostgroup_name)
         if curr_mode == new_mode:
@@ -189,7 +193,7 @@ class HostgroupModeController(wsgi.Controller):
             physnet_to_check = "{}%".format(ACI_CONFIG.baremetal_resource_prefix)
             fuzzy = True
         else:
-            # for infra switchover active portbindings can only be on one physnet
+            # for infra/baremetal v2 switchover active portbindings can only be on one physnet
             physnet_to_check = hg_config['physical_network']
             fuzzy = False
 
@@ -203,13 +207,26 @@ class HostgroupModeController(wsgi.Controller):
                                                "present in segment {}"
                                                .format(host, segment_id))
 
+        # for baremetalv2 check that there are no infra vlans left
+        if new_mode == aci_const.MODE_BAREMETAL_V2:
+            # the vpc check needs the original bindings, not the modified ones we use in the baremetal case
+            orig_hg = ACI_CONFIG.hostgroups[hg_config['name']]
+            epgs_in_use = self.rpc_notifier.get_epg_dns_used_by_ifaces(request.context, orig_hg['bindings'])
+            if epgs_in_use:
+                msg = (f"Bindings of hostgroup {hg_config['name']} are currently in use by {len(epgs_in_use)} EPG(s). "
+                       f"Bindings: {', '.join(hg_config['bindings'])} EPGs: {', '.join(epgs_in_use)}")
+                LOG.warning(msg)
+                if not skip_bmv2_vpc_check:
+                    raise web_exc.HTTPConflict(msg)
+
+        old_mode = curr_mode
         if self.db.set_hostgroup_mode(request.context, hostgroup_name, new_mode):
             LOG.info("Hostgroup %s set to mode %s", hostgroup_name, new_mode)
 
             hg_config = ACI_CONFIG.get_hostgroup(request.context, hostgroup_name)
             aci_objects_update_succeeded = False
-            if hg_config['hostgroup_mode'] == aci_const.MODE_INFRA:
-                # on switch from baremetal --> infra: switching policy group of port selectors, etc.
+            if old_mode == aci_const.MODE_BAREMETAL:
+                # on switch from baremetal --> infra/baremetal v2: switching policy group of port selectors, etc.
                 try:
                     self.rpc_notifier.sync_direct_mode_config(request.context, hg_config)
                     aci_objects_update_succeeded = True
