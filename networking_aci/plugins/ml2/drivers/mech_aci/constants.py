@@ -19,6 +19,7 @@ VIF_TYPE_ACI = 'aci'
 ACI_DRIVER_NAME = 'aci'  # same as setup.cfg aci = ... in entry_points
 
 MODE_BAREMETAL = 'baremetal'
+MODE_BAREMETAL_V2 = 'baremetal_v2'
 MODE_INFRA = 'infra'
 
 TRUNK_PROFILE = 'aci_trunk'
