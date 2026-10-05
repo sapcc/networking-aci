@@ -190,9 +190,4 @@ class ACITrunkDriver(base.DriverBase):
                 }
             self.core_plugin.update_port(context, subport.port_id, port_data)
 
-        num_deleted_subports = len(subports) if delete else 0
-        if len(trunk.sub_ports) - num_deleted_subports > 0:
-            trunk.update(status=trunk_const.TRUNK_ACTIVE_STATUS)
-        else:
-            # trunk is automatically set to DOWN on change. if we don't change that it will stay that way
-            LOG.info("Last subport was removed from trunk %s, setting it to state DOWN", trunk.id)
+        trunk.update(status=trunk_const.TRUNK_ACTIVE_STATUS)
