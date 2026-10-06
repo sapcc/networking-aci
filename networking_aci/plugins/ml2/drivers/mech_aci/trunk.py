@@ -2,7 +2,6 @@ import logging
 
 from neutron_lib.callbacks import events, registry, resources
 from neutron_lib.plugins import directory
-from neutron_lib.exceptions import NeutronException
 from neutron_lib.api.definitions import port as p_api
 from neutron_lib.api.definitions import portbindings
 from neutron_lib.services.trunk import constants as trunk_const
@@ -14,8 +13,10 @@ from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkHostgroupNotInBaremetalMode
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkCannotAllocateReservedVlan
+from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkPortHostgroupNotFound
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkSegmentationIdNotInAllowedRange
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkSegmentationNotConsistentInProject
+from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkUnsupportedResourceType
 
 
 CONF = cfg.CONF
@@ -76,7 +77,7 @@ class ACITrunkDriver(base.DriverBase):
             # Event: https://github.com/sapcc/neutron/blob/e49485f2aa7dd48f57f2d94080a37c49306e87d4/neutron/services/trunk/plugin.py#L362
             current_state = payload.states[0]
         else:
-            raise NeutronException(message="Unsupported type of resource {}".format(resource))
+            raise TrunkUnsupportedResourceType(resource=resource)
         parent = self._get_parent_port(payload.context, current_state.port_id)
         if not parent:
             return
@@ -86,8 +87,7 @@ class ACITrunkDriver(base.DriverBase):
 
         hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(payload.context, parent_host)
         if not hostgroup:
-            raise NeutronException(message="No hostgroup config found for port {} host {}"
-                                   .format(current_state.port_id, parent_host))
+            raise TrunkPortHostgroupNotFound(port_idcurrent_state.port_id, host=parent_host)
 
         if not (hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL):
             raise TrunkHostgroupNotInBaremetalMode(port_id=current_state.port_id, hostgroup=hostgroup_name)

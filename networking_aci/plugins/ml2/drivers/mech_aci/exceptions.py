@@ -42,6 +42,14 @@ class TrunkSegmentationNotConsistentInProject(exceptions.NeutronException):
                "ACI-connected baremetal servers.")
 
 
+class TrunkPortHostgroupNotFound(exceptions.NeutronException):
+    message = "No hostgroup config found por port %(port_id)s host %(host)s"
+
+
+class TrunkUnsupportedResourceType(exceptions.NeutronException):
+    message = "Unsupported type of resource %(resource)s"
+
+
 class NetworkHasBoundTrunkPorts(exceptions.NeutronException):
     message = ("Cannot bind access port in network %(network_id)s as segment %(segment_id)s is already present with "
                "trunk segmentation id %(segmentation_id)s")
