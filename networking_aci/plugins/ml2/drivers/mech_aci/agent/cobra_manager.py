@@ -95,14 +95,32 @@ class CobraManager(object):
 
     @classmethod
     def get_encap_mode(cls, hostgroup, segmentation_id):
-        # normal VMs OR baremetal hosts with segment id outside baremetal vlan access range --> trunk
-        # baremetal hosts with vlan id from baremetal vlan access range or infra hosts --> access
-        if hostgroup.get('direct_mode', False) and (
-                hostgroup['hostgroup_mode'] == aci_const.MODE_INFRA or
-                segmentation_id in common.get_set_from_ranges(hostgroup['baremetal_access_vlan_ranges'])):
-            return "untagged"  # access
-        else:
-            return "regular"  # trunk
+        # default mode is trunk mode ("regular"), for hostgroup "direct mode" default is access ("untagged")
+        #
+        # * only hostgroups in "direct mode" can have an access binding
+        # * trunk/access mode for direct groups depends on hostgroup mode
+        # * infra mode: access only (no trunk support)
+        # * baremetal mode: access by default, trunk if from "special vlan range"
+        #   (this is due to the ACI vlan pooling issues we generally have with baremetalmode)
+        # * baremetal v2: access by default, trunk if there is a Neutron trunk port present
+        #   (server component will determine this and communicate it with the extra "force_trunk" attribute
+        #    set on the hostgroup)
+
+        if hostgroup.get('direct_mode', False):
+            if hostgroup['hostgroup_mode'] == aci_const.MODE_INFRA:
+                # infra bindings are always access
+                return "untagged"  # access
+
+            if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL and \
+                    segmentation_id in common.get_set_from_ranges(hostgroup['baremetal_access_vlan_ranges']):
+                # baremetal
+                return "untagged"  # access
+
+            if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL_V2 and not hostgroup.get('force_trunk'):
+                # baremetal is untagged only for non-trunk segments
+                return "untagged"  # access
+
+        return "regular"  # trunk
 
     def ensure_domain_and_epg(self, context, network_id, external=False, remote_vni=None):
         tenant = self.get_or_create_tenant(network_id)
@@ -648,6 +666,15 @@ class CobraManager(object):
         if missing_route_parents:
             LOG.error("Nullroute sync skipped some nodes, as the ACI boilerplate config was missing: %s",
                       ", ".join(missing_route_parents))
+
+    def get_epg_dns_used_by_ifaces(self, iface_dns):
+        pdns = [self.get_pdn(iface_dn) for iface_dn in iface_dns]
+        filter_parts = [f'eq(fvRsPathAtt.tDn, "{pdn}")' for pdn in pdns]
+        pfilter = f"or({','.join(filter_parts)})"
+        result = self.apic.lookupByClass("fvRsPathAtt", propFilter=pfilter)
+        epg_dns = [str(entry.parentDn) for entry in result]
+
+        return epg_dns
 
     def clean_subnets(self, network):
         network_id = network['id']

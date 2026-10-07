@@ -1,9 +1,7 @@
 import logging
 
 from neutron_lib.callbacks import events, registry, resources
-from neutron_lib import constants as n_const
 from neutron_lib.plugins import directory
-from neutron_lib.exceptions import NeutronException
 from neutron_lib.api.definitions import port as p_api
 from neutron_lib.api.definitions import portbindings
 from neutron_lib.services.trunk import constants as trunk_const
@@ -15,8 +13,10 @@ from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkHostgroupNotInBaremetalMode
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkCannotAllocateReservedVlan
+from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkPortHostgroupNotFound
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkSegmentationIdNotInAllowedRange
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkSegmentationNotConsistentInProject
+from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkUnsupportedResourceType
 
 
 CONF = cfg.CONF
@@ -50,12 +50,41 @@ class ACITrunkDriver(base.DriverBase):
 
         self.core_plugin = directory.get_plugin()
 
+        registry.subscribe(self._clean_bmv2_vlan_ids_for_trunk_create, resources.TRUNK, events.BEFORE_CREATE)
+        registry.subscribe(self._clean_bmv2_vlan_ids_for_subports, resources.SUBPORTS, events.BEFORE_CREATE)
+
         registry.subscribe(self.trunk_check_valid, resources.TRUNK, events.PRECOMMIT_CREATE)
         registry.subscribe(self.trunk_create, resources.TRUNK, events.AFTER_CREATE)
         registry.subscribe(self.trunk_delete, resources.TRUNK, events.AFTER_DELETE)
         registry.subscribe(self.trunk_check_valid, resources.SUBPORTS, events.PRECOMMIT_CREATE)
         registry.subscribe(self.subport_create, resources.SUBPORTS, events.AFTER_CREATE)
         registry.subscribe(self.subport_delete, resources.SUBPORTS, events.AFTER_DELETE)
+
+    def _clean_bmv2_vlan_ids_for_trunk_create(self, resource, event, trunk_plugin, payload):
+        parent_port, hostgroup = self._get_parent_port_and_hostgroup(payload.context, payload.desired_state.port_id)
+        if not hostgroup or hostgroup['hostgroup_mode'] != aci_const.MODE_BAREMETAL_V2:
+            return
+
+        # find out all used vlan ids on this trunk if it already exists.
+        # assign negative numbers to everything not yet assigned
+        for n, sp in enumerate(payload.desired_state.sub_ports, 1):
+            sp.segmentation_id = -n
+
+    def _clean_bmv2_vlan_ids_for_subports(self, resource, event, trunk_plugin, payload):
+        trunk = payload.states[-1]
+        parent_port, hostgroup = self._get_parent_port_and_hostgroup(payload.context, trunk.port_id)
+        if not hostgroup or hostgroup['hostgroup_mode'] != aci_const.MODE_BAREMETAL_V2:
+            return
+
+        # find out all used vlan ids on this trunk if it already exists.
+        # assign negative numbers to everything not yet assigned
+        used_ids = {sp.segmentation_id for sp in trunk.sub_ports}
+        for sp in payload.metadata['subports_spec']:
+            n = -1
+            while n in used_ids:
+                n -= 1
+            sp['segmentation_id'] = n
+            used_ids.add(n)
 
     def _get_parent_port(self, context, parent_port_id):
         """Get parent port from payload
@@ -67,40 +96,52 @@ class ACITrunkDriver(base.DriverBase):
             return None
         return parent
 
+    def _get_parent_port_and_hostgroup(self, context, parent_port_id):
+        parent = self._get_parent_port(context, parent_port_id)
+        if not parent:
+            return None, None
+
+        parent_host = common.get_host_from_profile(parent['binding:profile'], parent['binding:host_id'])
+        LOG.debug("Trunk check valid called, got port %s with host %s", parent['id'], parent_host)
+
+        hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(context, parent_host)
+        if not hostgroup:
+            raise TrunkPortHostgroupNotFound(port_id=parent_port_id, host=parent_host)
+
+        if not (hostgroup['direct_mode'] and
+                hostgroup['hostgroup_mode'] in (aci_const.MODE_BAREMETAL, aci_const.MODE_BAREMETAL_V2)):
+            raise TrunkHostgroupNotInBaremetalMode(port_id=parent_port_id, hostgroup=hostgroup_name)
+
+        return parent, hostgroup
+
     def trunk_check_valid(self, resource, event, trunk_plugin, payload):
         if resource == resources.TRUNK:
             # Trunk resource contains desires_state
             # Event: https://github.com/sapcc/neutron/blob/e49485f2aa7dd48f57f2d94080a37c49306e87d4/neutron/services/trunk/plugin.py#L255
             current_state = payload.desired_state
+            subports = payload.desired_state.sub_ports
         elif resource == resources.SUBPORTS:
             # Subports resource contains states
             # Event: https://github.com/sapcc/neutron/blob/e49485f2aa7dd48f57f2d94080a37c49306e87d4/neutron/services/trunk/plugin.py#L362
             current_state = payload.states[0]
+            subports = payload.metadata.get('subports')
         else:
-            raise NeutronException(message="Unsupported type of resource {}".format(resource))
-        parent = self._get_parent_port(payload.context, current_state.port_id)
-        if not parent:
+            raise TrunkUnsupportedResourceType(resource=resource)
+
+        if not subports:
             return
 
-        parent_host = common.get_host_from_profile(parent['binding:profile'], parent['binding:host_id'])
-        LOG.debug("Trunk check valid called, got port %s with host %s", parent['id'], parent_host)
-
-        hostgroup_name, hostgroup = ACI_CONFIG.get_hostgroup_by_host(payload.context, parent_host)
-        if not hostgroup:
-            raise NeutronException(message="No hostgroup config found for port {} host {}"
-                                   .format(current_state.port_id, parent_host))
-
-        if not (hostgroup['direct_mode'] and hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL):
-            raise TrunkHostgroupNotInBaremetalMode(port_id=current_state.port_id, hostgroup=hostgroup_name)
-
-        if resource != resources.SUBPORTS or 'subports' not in payload.metadata:
-            # Only subports resource contains metadata with information
-            # Event: https://github.com/sapcc/neutron/blob/e49485f2aa7dd48f57f2d94080a37c49306e87d4/neutron/services/trunk/plugin.py#L373
+        parent, hostgroup = self._get_parent_port_and_hostgroup(payload.context, current_state.port_id)
+        if not parent or not hostgroup:
             return
 
-        vlan_map = ACI_CONFIG.db.get_trunk_vlan_usage_on_project(payload.context, parent['project_id'])
+        if hostgroup['hostgroup_mode'] == aci_const.MODE_BAREMETAL:
+            self._check_suboports_valid_baremetal(payload.context, subports, hostgroup, parent)
+
+    def _check_suboports_valid_baremetal(self, context, subports, hostgroup, parent):
+        vlan_map = ACI_CONFIG.db.get_trunk_vlan_usage_on_project(context, parent['project_id'])
         bm_access_ranges = common.get_set_from_ranges(hostgroup['baremetal_access_vlan_ranges'])
-        for subport in payload.metadata['subports']:
+        for subport in subports:
             if subport.segmentation_id in ACI_CONFIG.baremetal_reserved_vlans or \
                     subport.segmentation_id in bm_access_ranges:
                 raise TrunkCannotAllocateReservedVlan(segmentation_id=subport.segmentation_id)
@@ -115,7 +156,7 @@ class ACITrunkDriver(base.DriverBase):
             # check if any subport's segmentation id violates vlan consistency
             # --> in the subport's project no other network is allowed to use the segmentation id
             if subport.segmentation_id in vlan_map:
-                port = self.core_plugin.get_port(payload.context, subport.port_id)
+                port = self.core_plugin.get_port(context, subport.port_id)
                 nets = vlan_map[subport.segmentation_id]
                 if nets and port['network_id'] not in nets:
                     raise TrunkSegmentationNotConsistentInProject(segmentation_id=subport.segmentation_id,
@@ -180,21 +221,15 @@ class ACITrunkDriver(base.DriverBase):
                     },
                 }
             else:
+                # NOTE(seba): do not set VNIC type, neutron will refuse the port update for a bound port
                 port_data = {
                     p_api.RESOURCE_NAME: {
                         portbindings.HOST_ID: None,
-                        portbindings.VNIC_TYPE: None,
                         portbindings.PROFILE: None,
                         'device_owner': '',
                         'device_id': '',
-                        'status': n_const.PORT_STATUS_DOWN,
                     },
                 }
             self.core_plugin.update_port(context, subport.port_id, port_data)
 
-        num_deleted_subports = len(subports) if delete else 0
-        if len(trunk.sub_ports) - num_deleted_subports > 0:
-            trunk.update(status=trunk_const.TRUNK_ACTIVE_STATUS)
-        else:
-            # trunk is automatically set to DOWN on change. if we don't change that it will stay that way
-            LOG.info("Last subport was removed from trunk %s, setting it to state DOWN", trunk.id)
+        trunk.update(status=trunk_const.TRUNK_ACTIVE_STATUS)
