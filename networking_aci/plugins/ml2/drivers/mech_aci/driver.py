@@ -534,7 +534,7 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         if released:
             # physdoms will only be removed on segment removal
             clearable_physdoms = self._get_clearable_phys_doms(context, network['id'],
-                                                               segment, hostgroup, port['project_id'])
+                                                               segment, hostgroup)
 
         clearable_bm_entities = []
         reset_bindings_to_infra = False
@@ -578,13 +578,12 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         self.rpc_notifier.delete_port(context, port, hostgroup, clearable_physdoms, clearable_bm_entities,
                                       reset_bindings_to_infra)
 
-    def _get_clearable_phys_doms(self, context, network_id, local_segment, host_config, project_id):
+    def _get_clearable_phys_doms(self, context, network_id, local_segment, host_config):
         clearable_physdoms = set(host_config['physical_domain'])
         for other_segment in common.get_segments(context, network_id):
             if other_segment['physical_network'] is None:
                 continue
-            other_physdoms = ACI_CONFIG.get_physdoms_by_physnet(context, other_segment['physical_network'], network_id,
-                                                                project_id)
+            other_physdoms = ACI_CONFIG.get_physdoms_by_physnet(other_segment['physical_network'])
             if not other_physdoms:
                 LOG.warning("No config found for segment %s physical network %s in network %s",
                             local_segment['id'], other_segment['physical_network'], network_id)

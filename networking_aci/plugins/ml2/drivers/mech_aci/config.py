@@ -473,14 +473,21 @@ class ACIConfig:
             return None, None
         return hostgroup_name, self.get_hostgroup(context, hostgroup_name, segment_id, level)
 
-    def get_physdoms_by_physnet(self, context, physnet, network_id, override_project_id=None):
-        for hg_name, hg in self.hostgroups.items():
-            if hg['direct_mode']:
-                # we need mapped values for direct-mode hgs
-                hg = self.get_hostgroup(context, hg_name)
-            if hg['physical_network'] == physnet:
-                self.annotate_baremetal_info(context, hg, network_id, override_project_id)
+    def get_physdoms_by_physnet(self, physnet):
+        """Get aci physdoms for a given physnet"""
+
+        # handle baremetal case
+        if physnet.startswith(self.baremetal_resource_prefix):
+            # for a baremetal physnet the physdom and physnet names are the same
+            return [physnet]
+
+        # iterate directly over hostgroups to avoid DB queries
+        # as baremetal case is already handled, we just need the physnet -> physdom mapping,
+        # which can be inferred from any hostgroup that has physnet and physdom set
+        for hg in self.hostgroups.values():
+            if hg.get('physical_network') == physnet and hg.get('physical_domain'):
                 return hg['physical_domain']
+
         return []
 
     def get_fixed_binding_by_tag(self, tag):
