@@ -145,6 +145,12 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         if hostgroup.get('hostgroup_mode') != aci_const.MODE_BAREMETAL:
             # VM mode
             allocation = self.allocations_manager.allocate_segment(network, segment_physnet, level, hostgroup)
+            if allocation is None:
+                LOG.error("Cannot allocate network segment on physnet %s for binding port %s on network %s: "
+                          "Segment exhausted.",
+                          segment_physnet, port['id'], network['id'])
+                raise Exception(f"VLANs exhausted on segment {segment_physnet}")
+
             segmentation_id = allocation.segmentation_id
             segment_id = allocation.segment_id
         else:
@@ -169,6 +175,12 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
                 segmentation_id = None  # let the allocater choose a vlan
             allocation = self.allocations_manager.allocate_baremetal_segment(network,
                                                                              hostgroup, level, segmentation_id)
+            if allocation is None:
+                LOG.error("Cannot allocate baremetal network segment on physnet %s for binding port %s on network %s: "
+                          "Segment exhausted.",
+                          segment_physnet, port['id'], network['id'])
+                raise Exception(f"VLANs exhausted on segment {segment_physnet}")
+
             segment_id = allocation.id
             segmentation_id = allocation.segmentation_id
 
