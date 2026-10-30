@@ -157,8 +157,8 @@ class AllocationsManager(object):
             allocs = select.limit(100).all()
 
             if not allocs:
-                LOG.error("No Allocation available")
                 # No resource available
+                LOG.error("No allocation available on physical network %s for network %s", host_id, network_id)
                 return
 
             alloc = random.choice(allocs)
