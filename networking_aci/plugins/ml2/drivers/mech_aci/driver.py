@@ -14,24 +14,24 @@
 from neutron import service
 from neutron_lib.api.definitions import availability_zone as az_def
 from neutron_lib.api.definitions import external_net as extnet_def
+from neutron_lib.api.definitions import portbindings
 from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_const
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import directory
 from neutron_lib.plugins.ml2 import api
-from neutron_lib.api.definitions import portbindings
 from neutron_lib import rpc as n_rpc
-from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
+from oslo_log import log as logging
 
-from networking_aci._i18n import _LI, _LW
-from networking_aci.extensions.acioperations import Acioperations  # noqa, import enables extension
+from networking_aci.extensions.acioperations import Acioperations  # noqa: F401 - import enables extension
 from networking_aci.plugins.ml2.drivers.mech_aci import allocations_manager as allocations
 from networking_aci.plugins.ml2.drivers.mech_aci import common
+from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
+from networking_aci.plugins.ml2.drivers.mech_aci.config import CONF
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci import exceptions as aci_exc
-from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG, CONF
 from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
 from networking_aci.plugins.ml2.drivers.mech_aci.trunk import ACITrunkDriver
 
@@ -41,7 +41,7 @@ LOG = logging.getLogger(__name__)
 @registry.has_registry_receivers
 class CiscoACIMechanismDriver(api.MechanismDriver):
     def __init__(self):
-        LOG.info(_LI("ACI mechanism driver initializing..."))
+        LOG.info("ACI mechanism driver initializing...")
         self.topic = None
         self.conn = None
         self._plugin_property = None
@@ -114,9 +114,10 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         # hierarchical or direct?
         if not context.binding_levels:
             self._bind_port_hierarchical(context, port, hostgroup_name, hostgroup)
-        elif hostgroup['finalize_binding'] or \
-                (hostgroup['direct_mode'] and
-                 hostgroup['hostgroup_mode'] in (aci_const.MODE_BAREMETAL, aci_const.MODE_INFRA)):
+        elif hostgroup["finalize_binding"] or (
+            hostgroup["direct_mode"] and hostgroup["hostgroup_mode"]
+            in (aci_const.MODE_BAREMETAL, aci_const.MODE_INFRA)
+        ):
             # direct binding for a) baremetal on aci and b) infra mode (2nd level)
             self._bind_port_direct(context, port, hostgroup_name, hostgroup)
 
@@ -263,17 +264,17 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
 
             if subnetpool_id is None:
                 # TODO Set network to Down
-                LOG.warn(_LW("Subnet {} is attached to an external network but is not using a subnet pool, "
-                             "further configuration of this network in ACI is not possible"
-                             .format(context.current['id'])))
+                LOG.warning("Subnet %s is attached to an external network but is not using a subnet pool, "
+                            "further configuration of this network in ACI is not possible",
+                            context.current['id'])
                 return
 
             address_scope_name = self.db.get_address_scope_name(context._plugin_context, subnetpool_id)
             if address_scope_name is None:
                 # TODO Set network to Down
-                LOG.warn(_LW("Subnet {} is attached to an external network but in an address scope, "
-                             "further configuration of this network in ACI is not possible"
-                             .format(context.current['id'])))
+                LOG.warning("Subnet %s is attached to an external network but in an address scope, "
+                            "further configuration of this network in ACI is not possible",
+                            context.current['id'])
                 return
 
         self.rpc_notifier.create_subnet(context._plugin_context, context.current, external=external,
@@ -287,9 +288,9 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         network_id = context.current['network_id']
         subnetpool_id = context.current['subnetpool_id']
         if subnetpool_id is None:
-            LOG.warn(_LW("Subnet {} is attached to an external network but is not using a subnet pool, "
-                         "further configuration of this network in ACI is not possible"
-                         .format(context.current['id'])))
+            LOG.warning("Subnet %s is attached to an external network but is not using a subnet pool, "
+                        "further configuration of this network in ACI is not possible",
+                        context.current['id'])
             return
 
         address_scope_name = self.db.get_address_scope_name(context._plugin_context, subnetpool_id)
@@ -609,17 +610,14 @@ class CiscoACIMechanismDriver(api.MechanismDriver):
         network_id = current['id']
         network = context._plugin.get_network(context._plugin_context, network_id)
 
-        if network.get('router:external'):
-            return True
-
-        return False
+        return bool(network.get('router:external'))
 
     @staticmethod
     def _get_subnet_pool_name(context, subnet_pool_id):
         pool = context._plugin.get_subnetpool(context._plugin_context, subnet_pool_id)
 
         if not pool:
-            LOG.warn(_LW("Pool {} does not exist".format(subnet_pool_id)))
+            LOG.warning("Pool %s does not exist", subnet_pool_id)
             return
 
         return pool['name']

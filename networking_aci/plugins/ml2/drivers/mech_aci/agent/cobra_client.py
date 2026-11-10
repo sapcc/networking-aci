@@ -21,8 +21,9 @@ from cobra.mit.access import MoDirectory
 from cobra.mit.request import CommitError
 from cobra.mit.request import ConfigRequest
 from cobra.mit.request import DnQuery
-from cobra.mit.session import LoginSession, LoginError
 from cobra.mit.request import QueryError
+from cobra.mit.session import LoginError
+from cobra.mit.session import LoginSession
 from cobra.model.fv import Tenant
 from oslo_config import cfg
 from oslo_log import log
@@ -126,8 +127,8 @@ class CobraClient(object):
                 self.mo_dir = MoDirectory(login_session)
                 self.mo_dir.login()
 
-                LOG.info("Login session created, will expire at {} in {} seconds"
-                         .format(login_session.refreshTime, login_session.refreshTimeoutSeconds))
+                LOG.info("Login session created, will expire at %s in %s seconds",
+                         login_session.refreshTime, login_session.refreshTimeoutSeconds)
                 break
             except FALLBACK_EXCEPTIONS as exc:
                 if hasattr(exc, 'message'):
@@ -214,10 +215,10 @@ class CobraClient(object):
         tenant_mo = Tenant(self.uni_mo(), tenant_name)
 
         if not self.mo_exists(tenant_mo.dn):
-            LOG.debug("Configured tenant {} is missing, creating it now".format(tenant_mo.dn))
+            LOG.debug("Configured tenant %s is missing, creating it now", tenant_mo.dn)
             self.commit(tenant_mo)
         else:
-            LOG.debug("Using existing ACI tenant {}".format(tenant_mo.dn))
+            LOG.debug("Using existing ACI tenant %s", tenant_mo.dn)
 
         return tenant_mo
 

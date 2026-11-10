@@ -19,9 +19,9 @@ from neutron.conf import service as service_conf
 from oslo_config import cfg
 from oslo_log import log as logging
 
+from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci import exceptions as aci_exc
-from networking_aci.plugins.ml2.drivers.mech_aci import common
 
 LOG = logging.getLogger(__name__)
 DEFAULT_ROOT_HELPER = ('sudo /usr/local/bin/neutron-rootwrap '
@@ -393,10 +393,13 @@ class ACIConfig:
                 LOG.error("Unknwon or no host mode '%s' for group %s", hostgroup_mode, child_hg)
 
     def get_hostgroup(self, context, name, segment_id=None, level=None):
-        """Returns an adjusted copy of a named hostgroup
+        """
+        Returns an adjusted copy of a named hostgroup
 
         This method will create a copy of a named hostgtroup, find out its current mode (none, infra, baremetal)
-        and adjust all values accordingly, so it can be used interchangeable in most places."""
+        and adjust all values accordingly, so it can be used interchangeable in most places.
+        """
+
         if name not in self.hostgroups:
             return
 

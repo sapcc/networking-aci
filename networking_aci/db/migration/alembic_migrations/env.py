@@ -37,8 +37,7 @@ def set_mysql_engine():
         mysql_engine = None
 
     global MYSQL_ENGINE
-    MYSQL_ENGINE = (mysql_engine or
-                    model_base.BASEV2.__table_args__['mysql_engine'])
+    MYSQL_ENGINE = (mysql_engine or model_base.BASEV2.__table_args__['mysql_engine'])
 
 
 def include_object(object, name, type_, reflected, compare_to):

@@ -15,12 +15,9 @@ import ipaddress
 import json
 import threading
 
-from neutron_lib import constants as nl_const
-from neutron_lib.exceptions import address_scope as ext_address_scope
 from neutron.db import address_scope_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import external_net_db
-from neutron.db import models_v2
 from neutron.db.models import address_scope as ascope_models
 from neutron.db.models import agent as agent_models
 from neutron.db.models import external_net as extnet_models
@@ -28,10 +25,13 @@ from neutron.db.models import l3 as l3_models
 from neutron.db.models import l3agent as l3agent_models
 from neutron.db.models import segment as segment_models
 from neutron.db.models import tag as tag_models
+from neutron.db import models_v2
 from neutron.db import segments_db as ml2_db
-from neutron_lib.db import api as db_api
 from neutron.plugins.ml2 import models as ml2_models
 import neutron.services.trunk.models as trunk_models
+from neutron_lib import constants as nl_const
+from neutron_lib.db import api as db_api
+from neutron_lib.exceptions import address_scope as ext_address_scope
 from oslo_config import cfg
 from oslo_log import log as logging
 import sqlalchemy as sa
@@ -71,20 +71,20 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         pool = self.get_subnetpool(context, subnet_pool_id)
 
         if not pool:
-            LOG.warn("Subnet pool {} does not exist".format(subnet_pool_id))
+            LOG.warning("Subnet pool %s does not exist", subnet_pool_id)
             return
 
         try:
             scope = self.get_address_scope(context, pool['address_scope_id'])
         except ext_address_scope.AddressScopeNotFound:
-            LOG.warn("Address scope {} does could not be found, check ACI config for correct configuration"
-                     .format(['pool.address_scope_id']))
+            LOG.warning("Address scope %s does could not be found, check ACI config for correct configuration",
+                        ['pool.address_scope_id'])  # TODO(toanju): is this correct?
             return
 
         # This may not be needed no address scope not found is caught
         if not scope:
-            LOG.warn("Address scope {} does not exist, check ACI config for correct configuration"
-                     .format(['pool.address_scope_id']))
+            LOG.warning("Address scope %s does not exist, check ACI config for correct configuration",
+                        ['pool.address_scope_id'])
             return
 
         return scope.get('name')

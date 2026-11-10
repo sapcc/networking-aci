@@ -16,11 +16,11 @@
 import signal
 import time
 
+from neutron.agent import rpc as agent_rpc
+from neutron.db import db_base_plugin_v2 as db
 from neutron_lib.agent import topics
 from neutron_lib import constants as n_const
 from neutron_lib import context
-from neutron.agent import rpc as agent_rpc
-from neutron.db import db_base_plugin_v2 as db
 from oslo_config import cfg
 from oslo_log import helpers as log_helpers
 from oslo_log import log as logging
@@ -28,7 +28,6 @@ import oslo_messaging
 from oslo_service import loopingcall
 from stevedore import driver
 
-from networking_aci._i18n import _LI, _LE
 from networking_aci.plugins.ml2.drivers.mech_aci.agent import cobra_manager
 from networking_aci.plugins.ml2.drivers.mech_aci.common import LockedDirtyCache
 from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
@@ -183,11 +182,11 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
             self.state_rpc.report_state(ctx, self.agent_state)
             self.agent_state.pop('start_flag', None)
         except Exception:
-            LOG.exception(_LE("Failed reporting state!"))
+            LOG.exception("Failed reporting state!")
 
     def _check_and_handle_signal(self):
         if self.catch_sigterm:
-            LOG.info(_LI("Agent caught SIGTERM, quitting daemon loop."))
+            LOG.info("Agent caught SIGTERM, quitting daemon loop.")
             self.run_daemon_loop = False
             self.catch_sigterm = False
         return self.run_daemon_loop
@@ -268,15 +267,15 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                     if neutron_binding_count == 0:
                         LOG.warning("Skipping RPC loop due to zero binding count")
                     else:
-                        LOG.warning("Total binding count {}".format(neutron_binding_count))
+                        LOG.warning("Total binding count %s", neutron_binding_count)
 
                         bds = self.aci_manager.get_all_bridge_domains()
                         epgs = self.aci_manager.get_all_epgs()
                         neutron_network_ids = self.agent_rpc.get_network_ids(ctx)
                         neutron_network_count = self.agent_rpc.get_networks_count(ctx)
 
-                        LOG.info("Currently managing {} neutron networks and {} Bridge domains and {} EPGS"
-                                 .format(neutron_network_count, len(bds), len(epgs)))
+                        LOG.info("Currently managing %s neutron networks and %s Bridge domains and %s EPGS",
+                                 neutron_network_count, len(bds), len(epgs))
 
                         bd_names = []
                         for bd in bds:
@@ -289,14 +288,14 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                         # Orphaned  - so network ids in ACI but not neutron
                         orphaned = []
                         for bd_name in bd_names:
-                            if(bd_name not in neutron_network_ids and bd_name not in orphaned):
+                            if (bd_name not in neutron_network_ids and bd_name not in orphaned):
                                 orphaned.append(bd_name)
 
                         for epg_name in epg_names:
-                            if(epg_name not in neutron_network_ids and epg_name not in orphaned):
+                            if (epg_name not in neutron_network_ids and epg_name not in orphaned):
                                 orphaned.append(epg_name)
 
-                        LOG.info("EPG/BD check orphaned {}".format(orphaned))
+                        LOG.info("EPG/BD check orphaned %s", orphaned)
 
                         if self.prune_orphans and neutron_network_count > 0:
                             LOG.info("Deleting Orphaned resources")
@@ -336,12 +335,12 @@ class AciNeutronAgent(rpc_api.ACIRpcAPI):
                         self.sync_marker = neutron_networks[-1]['id']
 
                 except Exception:
-                    LOG.exception(_LE("Error while in rpc loop"))
+                    LOG.exception("Error while in rpc loop")
 
                 self.loop_count_and_wait(start)
 
     def daemon_loop(self):
         # Start everything.
-        LOG.info(_LI("ACI Agent initialized successfully, now running... "))
+        LOG.info("ACI Agent initialized successfully, now running... ")
         signal.signal(signal.SIGTERM, self._handle_sigterm)
         self.rpc_loop()

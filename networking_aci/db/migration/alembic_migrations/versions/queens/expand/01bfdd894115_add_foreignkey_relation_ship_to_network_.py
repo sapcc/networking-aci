@@ -13,6 +13,8 @@
 #    under the License.
 #
 
+from alembic import op
+
 """add foreignkey relation ship to network and networksegment
 
 Revision ID: 01bfdd894115
@@ -24,8 +26,6 @@ Create Date: 2020-10-26 17:24:24.798578
 # revision identifiers, used by Alembic.
 revision = '01bfdd894115'
 down_revision = '877aad5faa0d'
-
-from alembic import op
 
 
 def upgrade():

@@ -3,11 +3,10 @@ import re
 from neutron.db.models import address_scope as ascope_models
 from neutron.db.models import tag as tag_models
 from neutron.db import models_v2
-from neutron_lib.api.definitions import external_net as extnet_api
-from neutron_lib.db import api as db_api
-from neutron_lib import context
 from neutron.tests.common import helpers as neutron_test_helpers
-from neutron.tests.unit.plugins.ml2 import test_plugin
+from neutron_lib.api.definitions import external_net as extnet_api
+from neutron_lib import context
+from neutron_lib.db import api as db_api
 from oslo_config import cfg
 
 from networking_aci.tests import base

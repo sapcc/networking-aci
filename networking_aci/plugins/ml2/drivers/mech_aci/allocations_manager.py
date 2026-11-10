@@ -18,10 +18,10 @@ import os
 import random
 import time
 
-from neutron_lib import context
-from neutron_lib.db import api as db_api
 from neutron.db.models import segment as ml2_models
 from neutron.plugins.ml2 import models
+from neutron_lib import context
+from neutron_lib.db import api as db_api
 from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_db import exception as db_exc
@@ -29,10 +29,10 @@ from oslo_log import log
 from oslo_utils import uuidutils
 import sqlalchemy as sa
 
-from networking_aci._i18n import _LI
-from networking_aci.db.models import AllocationsModel, HostgroupModeModel
-from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
+from networking_aci.db.models import AllocationsModel
+from networking_aci.db.models import HostgroupModeModel
 from networking_aci.plugins.ml2.drivers.mech_aci import common
+from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import AccessSegmentationIdAllocationPoolExhausted
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import HostAlreadyHasAccessBinding
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import NetworkHasBoundTrunkPorts
@@ -51,7 +51,7 @@ class AllocationsManager(object):
 
     def initialize(self):
         self._sync_db_guarded()
-        LOG.info(_LI("AllocationsManager initialization complete"))
+        LOG.info("AllocationsManager initialization complete")
 
     def _sync_db_guarded(self):
         if not CONF.ml2_aci.sync_allocations_done_file_path:
@@ -131,7 +131,7 @@ class AllocationsManager(object):
 
     @db_api.retry_db_errors
     def _allocate_vxlan_segment(self, network, host_id, level, host_config):
-        LOG.info(_LI("Allocating segment for network type VXLAN"))
+        LOG.info("Allocating segment for network type VXLAN")
         segment_type = host_config.get('segment_type', 'vlan')
         segment_physnet = host_config.get('physical_network', None)
         network_id = network['id']
