@@ -9,6 +9,9 @@
 #    under the License.
 #
 
+from alembic import op
+import sqlalchemy as sa
+
 """Hierarchical port binding allocations
 
 Revision ID: 981f4d71956
@@ -17,15 +20,9 @@ Create Date: 2015-11-23 14:25:39.157776
 
 """
 
-from alembic import op
-import sqlalchemy as sa
-from neutron.db.migration import cli
-
-
 # revision identifiers, used by Alembic.
 revision = '981f4d71956'
 down_revision = 'a45cd5df3467'
-
 
 
 def upgrade():

@@ -16,8 +16,8 @@ import functools
 
 from neutron.api import extensions
 from neutron.api.v2.resource import Resource
+from neutron.api import wsgi
 from neutron import policy
-from neutron import wsgi
 from neutron_lib.api import extensions as api_extensions
 from neutron_lib.api import faults
 from neutron_lib.plugins import directory
@@ -25,9 +25,9 @@ from oslo_log import log
 from webob import exc as web_exc
 
 import networking_aci.extensions
-from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci.common import DBPlugin
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci import rpc_api
 
 LOG = log.getLogger(__name__)

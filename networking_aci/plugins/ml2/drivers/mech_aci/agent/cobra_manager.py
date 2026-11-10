@@ -14,7 +14,12 @@
 #    under the License.
 import time
 
-from cobra.model import fv, fvns, infra, ip, phys, rtctrl
+from cobra.model import fv
+from cobra.model import fvns
+from cobra.model import infra
+from cobra.model import ip
+from cobra.model import phys
+from cobra.model import rtctrl
 import cobra.modelimpl.l3ext.out
 import netaddr
 from neutron_lib.api.definitions import availability_zone as az_def
@@ -97,9 +102,10 @@ class CobraManager(object):
     def get_encap_mode(cls, hostgroup, segmentation_id):
         # normal VMs OR baremetal hosts with segment id outside baremetal vlan access range --> trunk
         # baremetal hosts with vlan id from baremetal vlan access range or infra hosts --> access
-        if hostgroup.get('direct_mode', False) and (
-                hostgroup['hostgroup_mode'] == aci_const.MODE_INFRA or
-                segmentation_id in common.get_set_from_ranges(hostgroup['baremetal_access_vlan_ranges'])):
+        if hostgroup.get("direct_mode", False) and (
+            hostgroup["hostgroup_mode"] == aci_const.MODE_INFRA or segmentation_id
+            in common.get_set_from_ranges(hostgroup["baremetal_access_vlan_ranges"])
+        ):
             return "untagged"  # access
         else:
             return "regular"  # trunk
@@ -169,8 +175,8 @@ class CobraManager(object):
         tenant = self.get_tenant(network_id)
 
         if tenant is None:
-            LOG.warning("Cannot determine tenant {} for network {}. Aborting delete."
-                        .format(self.tenant_manager.get_tenant_name(network_id), network_id))
+            LOG.warning("Cannot determine tenant %s for network %s. Aborting delete.",
+                        self.tenant_manager.get_tenant_name(network_id), network_id)
             return
 
         bd = fv.BD(tenant, network_id)
@@ -183,7 +189,7 @@ class CobraManager(object):
         self.apic.commit(epg)
         self.apic.commit(bd)
 
-        if(len(self.get_tenant_bridge_domains(tenant)) == 0 and len(self.get_tenant_epgs(tenant)) == 0):
+        if (len(self.get_tenant_bridge_domains(tenant)) == 0 and len(self.get_tenant_epgs(tenant)) == 0):
             tenant.delete()
             self.apic.commit(tenant)
 
@@ -203,11 +209,14 @@ class CobraManager(object):
         return entities
 
     def ensure_static_bindings_configured(self, network_id, host_config, encap=None,
-                                          delete=False, physdoms_to_clear=[]):
+                                          delete=False, physdoms_to_clear=None):
+        if physdoms_to_clear is None:
+            physdoms_to_clear = []
+
         tenant = self.get_tenant(network_id)
         if not tenant:
-            LOG.error("Network {} does not appear to be avilable in ACI, expected in tenant {}"
-                      .format(network_id, self.tenant_manager.get_tenant_name(network_id)))
+            LOG.error("Network %s does not appear to be avilable in ACI, expected in tenant %s",
+                      network_id, self.tenant_manager.get_tenant_name(network_id))
             return
 
         direct_mode = host_config.get('direct_mode', False)
@@ -348,7 +357,7 @@ class CobraManager(object):
             if out:
                 subnet_outs.append(fv.RsBDSubnetToOut(subnet, out.name))
             else:
-                LOG.error('Cannot configure L3 out for subnet, {} not found in ACI configuration'.format(l3_out))
+                LOG.error('Cannot configure L3 out for subnet, %s not found in ACI configuration', l3_out)
 
                 # We don't need the out profiles for now
                 # subnet_out_profile = RsBDSubnetToProfile(subnet,l3_out,tnL3extOutName=l3_out)
@@ -387,8 +396,8 @@ class CobraManager(object):
         tenant = self.get_tenant(network_id)
 
         if tenant is None:
-            LOG.warning("Cannot determine tenant {} for network {}. Aborting configuration.".format(
-                self.tenant_manager.get_tenant_name(network_id), network_id))
+            LOG.warning("Cannot determine tenant %s for network %s. Aborting configuration.",
+                        self.tenant_manager.get_tenant_name(network_id), network_id)
             return
 
         bd = fv.BD(tenant, network_id)
@@ -417,7 +426,7 @@ class CobraManager(object):
                     bd_out.delete()
                 bd_outs.append(bd_out)
             else:
-                LOG.error('Cannot configure L3 out for BD, {} not found in ACI configuration'.format(l3_out))
+                LOG.error('Cannot configure L3 out for BD, %s not found in ACI configuration', l3_out)
 
         # if delete:
             # vrf.delete() #TODO: the RsCtx object cannot be deleted, need to find out how to clear on the BD

@@ -1,11 +1,11 @@
-import uhashring
 from oslo_config import cfg
 from oslo_log import log as logging
+import uhashring
 
 LOG = logging.getLogger(__name__)
 
 
-class HashRingTenantManager(object):
+class HashRingTenantManager:
     def __init__(self):
         self.ring_size = cfg.CONF.ml2_aci.tenant_ring_size
         self.tenant_prefix = cfg.CONF.ml2_aci.tenant_prefix
@@ -14,7 +14,7 @@ class HashRingTenantManager(object):
         if len(items) != 2:
             LOG.error("Managed items is incorrectly configured, should be in format n:m, "
                       "where n is the starting tenant key and m is the last tenant key managed")
-            assert()
+            raise AssertionError("HashRingTenantManager: Incorrectly configured, should be in format n:m (len!=2)")
 
         start = int(items[0])
         stop = int(items[1])
@@ -22,8 +22,7 @@ class HashRingTenantManager(object):
         if start < 1 or stop > self.ring_size:
             LOG.error("Managed items is incorrectly configured, should be in format n:m, "
                       "where n is the starting tenant key and m is the last tenant key managed")
-            assert()
-
+            raise AssertionError("HashRingTenantManager: Incorrectly configured, should be in format n:m")
         self._managed_range = list(range(start, stop + 1))
         self.ring = uhashring.HashRing(list(range(self.ring_size)), hash_fn='ketama', replicas=3)
 

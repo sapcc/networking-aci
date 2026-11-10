@@ -13,6 +13,8 @@
 #    under the License.
 #
 
+from alembic import op
+
 """prevent duplicate network segments in allocation table
 
 Revision ID: 877aad5faa0d
@@ -24,8 +26,6 @@ Create Date: 2020-10-26 16:35:51.882628
 # revision identifiers, used by Alembic.
 revision = '877aad5faa0d'
 down_revision = '981f4d71956'
-
-from alembic import op
 
 
 def upgrade():

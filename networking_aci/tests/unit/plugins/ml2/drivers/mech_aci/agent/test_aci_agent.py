@@ -13,12 +13,11 @@
 # under the License.
 import sys
 
-import mock
 from neutron.tests import base
 from oslo_config import cfg
+from unittest import mock
 
 from networking_aci.tests.unit import utils
-
 
 
 class AciNeutronAgentTest(base.BaseTestCase):
@@ -34,8 +33,8 @@ class AciNeutronAgentTest(base.BaseTestCase):
         sys.modules['cobra.model.fv'] = mock.MagicMock()
         sys.modules['cobra.modelimpl.l3ext.out'] = mock.MagicMock()
 
-        from networking_aci.plugins.ml2.drivers.mech_aci.agent.entry_point import register_options
         from networking_aci.plugins.ml2.drivers.mech_aci.agent.aci_agent import AciNeutronAgent
+        from networking_aci.plugins.ml2.drivers.mech_aci.agent.entry_point import register_options
         register_options()
 
         self.aci_agent = AciNeutronAgent()
@@ -47,6 +46,15 @@ class AciNeutronAgentTest(base.BaseTestCase):
         self.aci_agent.agent_rpc.get_networks_count = mock.Mock(return_value=1)
         self.aci_agent.polling_interval = 0
         utils.setup_aci_config(cfg)
+
+    def tearDown(self):
+        # The agent starts background looping calls in its constructor; stop
+        # them so their worker threads don't leak and hang the test process.
+        for loop_attr in ('_heartbeat', '_non_epg_syncloop'):
+            loop = getattr(self.aci_agent, loop_attr, None)
+            if loop is not None:
+                loop.stop()
+        super(AciNeutronAgentTest, self).tearDown()
 
     def test_rpc_loop_race_condition(self):
         self.aci_agent._check_and_handle_signal = mock.Mock(side_effect=[True, False, False])

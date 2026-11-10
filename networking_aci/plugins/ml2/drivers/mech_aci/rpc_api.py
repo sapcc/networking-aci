@@ -13,14 +13,14 @@
 #    under the License.
 import time
 
+from neutron.extensions import tagging
+from neutron.services.tag import tag_plugin
 from neutron_lib.agent import topics
 from neutron_lib.exceptions import NetworkNotFound
 from neutron_lib import rpc as n_rpc
-from neutron.extensions import tagging
-from neutron.services.tag import tag_plugin
 from oslo_db import exception as db_exc
-from oslo_log import log as logging
 from oslo_log import helpers as log_helpers
+from oslo_log import log as logging
 import oslo_messaging
 from sqlalchemy.orm import exc as orm_exc
 
@@ -126,7 +126,7 @@ class AgentRpcCallback(object):
         try:
             tags = self.tag_plugin.get_tags(context, 'networks', network_id).get('tags', [])
         except tagging.TagResourceNotFound:
-            LOG.warning("Cannot find network {} while attempting to check static binding tag".format(network_id))
+            LOG.warning("Cannot find network %s while attempting to check static binding tag", network_id)
             tags = []
         result['tags'] = tags
 
@@ -196,12 +196,10 @@ class AgentRpcCallback(object):
         try:
             self.tag_plugin.update_tag(rpc_context, 'networks', network_id, tag)
         except tagging.TagResourceNotFound:
-            LOG.info("Tagging attempt made on missing network {} , network may have been deleted concurrently."
-                     .format(network_id))
+            LOG.info("Tagging attempt made on missing network %s, network may have been deleted concurrently.", network_id)
         except orm_exc.StaleDataError:
-            LOG.info("Tagging attempt resulted in stale data error on DB access for network {}, "
-                     "network may have been deleted concurrently."
-                     .format(network_id))
+            LOG.info("Tagging attempt resulted in stale data error on DB access for network %s, "
+                     "network may have been deleted concurrently.", network_id)
         except db_exc.DBReferenceError as e:
             LOG.warning("Could not tag Network %s with %s due to DBReferenceError - network might already be deleted? "
                         "(error was: %s)", network_id, tag, e)

@@ -14,7 +14,6 @@
 #    under the License.
 import sys
 
-from networking_aci._i18n import _LI
 from networking_aci.plugins.ml2.drivers.mech_aci.agent import aci_agent
 from neutron.common import config as common_config
 from neutron.conf.agent import common as config
@@ -39,5 +38,5 @@ def main():
     agent = aci_agent.AciNeutronAgent()
 
     # Start everything.
-    LOG.info(_LI("ACI Agent initialized successfully, now running... "))
+    LOG.info("ACI Agent initialized successfully, now running... ")
     agent.daemon_loop()

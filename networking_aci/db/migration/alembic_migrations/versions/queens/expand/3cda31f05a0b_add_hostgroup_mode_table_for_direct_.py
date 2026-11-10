@@ -13,6 +13,9 @@
 #    under the License.
 #
 
+from alembic import op
+import sqlalchemy as sa
+
 """add hostgroup mode table for direct-mode hostgroups
 
 Revision ID: 3cda31f05a0b
@@ -24,9 +27,6 @@ Create Date: 2021-03-16 15:03:17.126087
 # revision identifiers, used by Alembic.
 revision = '3cda31f05a0b'
 down_revision = '01bfdd894115'
-
-from alembic import op
-import sqlalchemy as sa
 
 
 def upgrade():

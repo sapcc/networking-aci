@@ -18,13 +18,14 @@ from pathlib import Path
 import tempfile
 from unittest import mock
 
+from neutron.tests.common.test_db_base_plugin_v2 import NeutronDbPluginV2TestCase
 from neutron_lib import context
 from neutron_lib.db import api as db_api
-from neutron.tests.unit.db.test_db_base_plugin_v2 import NeutronDbPluginV2TestCase
 from oslo_config import cfg
 
 from networking_aci.db.models import AllocationsModel
-from networking_aci.plugins.ml2.drivers.mech_aci.allocations_manager import AllocationsManager
+from networking_aci.plugins.ml2.drivers.mech_aci.allocations_manager import \
+    AllocationsManager
 from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
 

@@ -15,9 +15,9 @@ import sys
 import threading
 import time
 
-import mock
 from neutron.tests import base
 from oslo_config import cfg
+from unittest import mock
 
 from networking_aci.tests.unit import utils
 
@@ -30,8 +30,8 @@ for mod in ['cobra', 'cobra.mit', 'cobra.mit.access', 'cobra.mit.session',
     sys.modules.setdefault(mod, mock.MagicMock())
 
 # import after cobra mocks
-from networking_aci.plugins.ml2.drivers.mech_aci.agent.entry_point import register_options
-from networking_aci.plugins.ml2.drivers.mech_aci.agent.cobra_manager import CobraManager
+from networking_aci.plugins.ml2.drivers.mech_aci.agent.cobra_manager import CobraManager  # noqa: E402
+from networking_aci.plugins.ml2.drivers.mech_aci.agent.entry_point import register_options  # noqa: E402
 
 
 class TestCobraManager(base.BaseTestCase):

@@ -1,20 +1,22 @@
 import logging
 
-from neutron_lib.callbacks import events, registry, resources
-from neutron_lib import constants as n_const
-from neutron_lib.plugins import directory
-from neutron_lib.exceptions import NeutronException
+from neutron.services.trunk.drivers import base
 from neutron_lib.api.definitions import port as p_api
 from neutron_lib.api.definitions import portbindings
+from neutron_lib.callbacks import events
+from neutron_lib.callbacks import registry
+from neutron_lib.callbacks import resources
+from neutron_lib import constants as n_const
+from neutron_lib.exceptions import NeutronException
+from neutron_lib.plugins import directory
 from neutron_lib.services.trunk import constants as trunk_const
-from neutron.services.trunk.drivers import base
 from oslo_config import cfg
 
-from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci import common
 from networking_aci.plugins.ml2.drivers.mech_aci.config import ACI_CONFIG
-from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkHostgroupNotInBaremetalMode
+from networking_aci.plugins.ml2.drivers.mech_aci import constants as aci_const
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkCannotAllocateReservedVlan
+from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkHostgroupNotInBaremetalMode
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkSegmentationIdNotInAllowedRange
 from networking_aci.plugins.ml2.drivers.mech_aci.exceptions import TrunkSegmentationNotConsistentInProject
 
