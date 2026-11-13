@@ -69,6 +69,9 @@ class ACIRpcAPI(object):
     def sync_nullroutes(self, context):
         raise NotImplementedError
 
+    def get_epg_dns_used_by_ifaces(self, context, iface_dns):
+        raise NotImplementedError
+
 
 class AgentRpcCallback(object):
 
@@ -163,8 +166,9 @@ class AgentRpcCallback(object):
         processed_hostgroups = []
         transit_hgs = ACI_CONFIG.get_transit_hostgroups()
         host_segments = self.db.get_hosts_on_network(context, network_id, level=1, with_segment=True,
-                                                     transit_hostgroups=transit_hgs)
-        for host, segment_id in host_segments:
+                                                     with_has_trunk_port=True, transit_hostgroups=transit_hgs)
+        for host, host_data in host_segments.items():
+            segment_id = host_data['segment_id']
             hostgroup_name = ACI_CONFIG.get_hostgroup_name_by_host(host)
             if not hostgroup_name or hostgroup_name in processed_hostgroups:
                 continue
@@ -177,6 +181,9 @@ class AgentRpcCallback(object):
 
             # for mode baremetal: override baremetal_resource_name
             ACI_CONFIG.annotate_baremetal_info(context, hostgroup, network_id)
+
+            if hostgroup.get('hostgroup_mode') == aci_const.MODE_BAREMETAL_V2 and host_data.get('has_trunk_port'):
+                hostgroup['force_trunk'] = True
 
             segment = segment_dict[segment_id]
             result['bindings'].append({
@@ -258,8 +265,11 @@ class ACIRpcClientAPI(object):
     def _topic(self, action=topics.CREATE, host=None):
         return topics.get_topic_name(topics.AGENT, aci_const.ACI_TOPIC, action, host)
 
+    def _get_client(self, fanout=False):
+        return self.client.prepare(version=self.version, topic=self._topic(), fanout=fanout)
+
     def _fanout(self):
-        return self.client.prepare(version=self.version, topic=self._topic(), fanout=True)
+        return self._get_client(fanout=True)
 
     def bind_port(self, context, port, host_config, segment, next_segment):
         self._fanout().cast(context, 'bind_port', port=port, host_config=host_config, segment=segment,
@@ -304,6 +314,9 @@ class ACIRpcClientAPI(object):
 
     def sync_nullroutes(self, context):
         self._fanout().cast(context, 'sync_nullroutes')
+
+    def get_epg_dns_used_by_ifaces(self, context, iface_dns):
+        return self._get_client().call(context, 'get_epg_dns_used_by_ifaces', iface_dns=iface_dns)
 
 
 class AgentRpcClientAPI(object):

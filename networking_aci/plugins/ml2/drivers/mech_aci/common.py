@@ -17,6 +17,7 @@ import threading
 
 from neutron_lib import constants as nl_const
 from neutron_lib.exceptions import address_scope as ext_address_scope
+from oslo_serialization import jsonutils
 from neutron.db import address_scope_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import external_net_db
@@ -30,6 +31,7 @@ from neutron.db.models import segment as segment_models
 from neutron.db.models import tag as tag_models
 from neutron.db import segments_db as ml2_db
 from neutron_lib.db import api as db_api
+from neutron_lib.services.trunk import constants as trunk_const
 from neutron.plugins.ml2 import models as ml2_models
 import neutron.services.trunk.models as trunk_models
 from oslo_config import cfg
@@ -130,28 +132,34 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         return hosts
 
     @db_api.CONTEXT_READER
-    def get_hosts_on_network(self, context, network_id, level=None, with_segment=False, transit_hostgroups=None):
+    def get_hosts_on_network(self, context, network_id, level=None, with_segment=False, with_has_trunk_port=False,
+                             transit_hostgroups=None):
         """Get all binding hosts (from host or binding_profile) present on a network"""
         fields = [ml2_models.PortBinding.host, ml2_models.PortBinding.profile]
         if with_segment:
             fields.append(ml2_models.PortBindingLevel.segment_id)
+        if with_has_trunk_port:
+            fields.append(models_v2.Port.device_owner)
         query = context.session.query(*fields)
         query = query.join(ml2_models.PortBindingLevel,
                            sa.and_(ml2_models.PortBinding.port_id == ml2_models.PortBindingLevel.port_id,
                                    ml2_models.PortBinding.host == ml2_models.PortBindingLevel.host))
         query = query.join(segment_models.NetworkSegment,
                            ml2_models.PortBindingLevel.segment_id == segment_models.NetworkSegment.id)
+        if with_has_trunk_port:
+            query = query.join(models_v2.Port, ml2_models.PortBinding.port_id == models_v2.Port.id)
         query = query.filter(segment_models.NetworkSegment.network_id == network_id)
         if level is not None:
             query = query.filter(ml2_models.PortBindingLevel.level == level)
 
-        hosts = set()
+        hosts = {}
         for entry in query.all():
             host = get_host_from_profile(entry.profile, entry.host)
+            hosts[host] = {}
             if with_segment:
-                hosts.add((host, entry.segment_id))
-            else:
-                hosts.add(host)
+                hosts[host]['segment_id'] = entry.segment_id
+            if with_has_trunk_port:
+                hosts[host]['has_trunk_port'] = entry.device_owner == trunk_const.TRUNK_SUBPORT_OWNER
 
         # find all segments in this network that belong to a transit (unbound segments)
         if transit_hostgroups:
@@ -165,10 +173,10 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 for hg in transit_hostgroups:
                     if entry.physical_network == hg['physical_network']:
                         break
+                host = hg['hosts'][0]
+                hosts[host] = {}
                 if with_segment:
-                    hosts.add((hg['hosts'][0], entry.id))
-                else:
-                    hosts.add(hg['hosts'][0])
+                    hosts[host]['segment_id'] = entry.id
 
         return hosts
 
@@ -271,6 +279,16 @@ class DBPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             vlan_map.setdefault(entry[0], set()).add(entry[1])
 
         return vlan_map
+
+    @db_api.CONTEXT_WRITER
+    def update_sub_port_segmentation_id(self, context, port_id, segmentation_id):
+        context.session.query(trunk_models.SubPort).filter_by(port_id=port_id).update(
+            {'segmentation_id': segmentation_id})
+
+    @db_api.CONTEXT_WRITER
+    def update_port_binding_profile(self, context, port_id, profile):
+        context.session.query(ml2_models.PortBinding).filter_by(port_id=port_id).update(
+            {'profile': jsonutils.dumps(profile)})
 
     @db_api.CONTEXT_READER
     def get_az_aware_external_subnets(self, context):

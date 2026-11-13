@@ -42,6 +42,14 @@ class TrunkSegmentationNotConsistentInProject(exceptions.NeutronException):
                "ACI-connected baremetal servers.")
 
 
+class TrunkPortHostgroupNotFound(exceptions.NeutronException):
+    message = "No hostgroup config found por port %(port_id)s host %(host)s"
+
+
+class TrunkUnsupportedResourceType(exceptions.NeutronException):
+    message = "Unsupported type of resource %(resource)s"
+
+
 class NetworkHasBoundTrunkPorts(exceptions.NeutronException):
     message = ("Cannot bind access port in network %(network_id)s as segment %(segment_id)s is already present with "
                "trunk segmentation id %(segmentation_id)s")
@@ -55,6 +63,11 @@ class NetworkUsesDifferentTrunkId(exceptions.NeutronException):
 class TrunkSegmentIdAlreadyInUse(exceptions.NeutronException):
     message = ("Segmentation id %(segmentation_id)s is already in use by network segment %(segment_id)s, "
                "cannot repurpose it")
+
+
+class TrunkBaremetalV2WrongVlanUsed(exceptions.BadRequest):
+    message = ("Host %(host)s is in baremetal v2 mode, vlan IDs are autoallocated. Please specify vlan id 1 for "
+               "each subport you are adding (offending port: %(port_id)s)")
 
 
 class HostAlreadyHasAccessBinding(exceptions.NeutronException):
